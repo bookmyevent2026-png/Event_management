@@ -1,0 +1,601 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Search, 
+  MapPin, 
+  Calendar, 
+  Star, 
+  Clock, 
+  ChevronDown, 
+  Heart, 
+  Share2, 
+  Ticket,
+  Users,
+  ArrowRight,
+  Sparkles,
+  TrendingUp,
+  Zap
+} from 'lucide-react';
+import { useNavigate } from "react-router-dom";
+
+// Dummy Backend Data
+const EVENTS_DATA = [
+  {
+    id: 1,
+    title: "Neon Nights Music Festival",
+    category: "Entertainment",
+    price: 0,
+    currency: "₹",
+    location: "JFN Paradise, Chennai",
+    date: "2026-03-15",
+    time: "18:00",
+    image: "https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?w=800&auto=format&fit=crop",
+    rating: 4.8,
+    reviews: 128,
+    attendees: 500,
+    organizer: "S2S Events",
+    tags: ["Music", "Live", "Festival"],
+    bookingEnds: "2026-03-14T23:59:59",
+    trending: true
+  },
+  {
+    id: 2,
+    title: "Global Investors Summit 2026",
+    category: "Conference",
+    price: 0,
+    currency: "₹",
+    location: "Funabori Town Hall",
+    date: "2026-03-20",
+    time: "09:00",
+    image: "https://images.unsplash.com/photo-1544531585-9847b68c8c86?w=800&auto=format&fit=crop",
+    rating: 4.9,
+    reviews: 89,
+    attendees: 1200,
+    organizer: "K-KCCS India",
+    tags: ["Business", "Investment", "Networking"],
+    bookingEnds: "2026-03-19T23:59:59",
+    trending: false
+  },
+  {
+    id: 3,
+    title: "Tech Talent Confluence",
+    category: "Conference",
+    price: 0,
+    currency: "₹",
+    location: "Hyatt Regency",
+    date: "2026-04-05",
+    time: "10:00",
+    image: "https://images.unsplash.com/photo-1540575467063-178a50c2df87?w=800&auto=format&fit=crop",
+    rating: 4.7,
+    reviews: 256,
+    attendees: 800,
+    organizer: "Megathil",
+    tags: ["Technology", "Career", "Innovation"],
+    bookingEnds: "2026-04-04T23:59:59",
+    trending: true
+  },
+  {
+    id: 4,
+    title: "Culinary Arts Expo",
+    category: "Corporate",
+    price: 0,
+    currency: "₹",
+    location: "Chennai Trade Centre",
+    date: "2026-04-12",
+    time: "11:00",
+    image: "https://images.unsplash.com/photo-1555244162-803279f50793?w=800&auto=format&fit=crop",
+    rating: 4.6,
+    reviews: 167,
+    attendees: 300,
+    organizer: "CavinKare",
+    tags: ["Food", "Exhibition", "Corporate"],
+    bookingEnds: "2026-04-11T23:59:59",
+    trending: false
+  },
+  {
+    id: 5,
+    title: "AI & Future Tech Symposium",
+    category: "Education",
+    price: 499,
+    currency: "₹",
+    location: "IIT Madras Research Park",
+    date: "2026-03-25",
+    time: "09:30",
+    image: "https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=800&auto=format&fit=crop",
+    rating: 4.9,
+    reviews: 342,
+    attendees: 600,
+    organizer: "TechEd India",
+    tags: ["AI", "Education", "Future"],
+    bookingEnds: "2026-03-24T23:59:59",
+    trending: true
+  },
+  {
+    id: 6,
+    title: "Marathon Run 2026",
+    category: "Sports",
+    price: 299,
+    currency: "₹",
+    location: "Marina Beach, Chennai",
+    date: "2026-03-30",
+    time: "05:30",
+    image: "https://images.unsplash.com/photo-1552674605-db6ffd4facb5?w=800&auto=format&fit=crop",
+    rating: 4.8,
+    reviews: 512,
+    attendees: 2000,
+    organizer: "Chennai Runners",
+    tags: ["Sports", "Fitness", "Marathon"],
+    bookingEnds: "2026-03-29T23:59:59",
+    trending: false
+  }
+];
+
+const CATEGORIES = [
+  { name: "All", icon: "🎯", color: "from-slate-600 to-slate-700" },
+  { name: "Entertainment", icon: "🎭", color: "from-orange-500 to-red-500" },
+  { name: "Conference", icon: "💼", color: "from-teal-500 to-cyan-500" },
+  { name: "Corporate", icon: "🏢", color: "from-emerald-500 to-teal-500" },
+  { name: "Sports", icon: "⚽", color: "from-amber-500 to-orange-500" },
+  { name: "Education", icon: "📚", color: "from-indigo-500 to-purple-500" },
+  { name: "Expo", icon: "🎪", color: "from-pink-500 to-rose-500" }
+];
+
+const CountdownTimer = ({ targetDate }) => {
+  const [timeLeft, setTimeLeft] = useState({});
+
+  useEffect(() => {
+    const calculateTimeLeft = () => {
+      const difference = new Date(targetDate) - new Date();
+      if (difference > 0) {
+        return {
+          days: Math.floor(difference / (1000 * 60 * 60 * 24)),
+          hours: Math.floor((difference / (1000 * 60 * 60)) % 24),
+          minutes: Math.floor((difference / 1000 / 60) % 60),
+          seconds: Math.floor((difference / 1000) % 60)
+        };
+      }
+      return { days: 0, hours: 0, minutes: 0, seconds: 0 };
+    };
+
+    setTimeLeft(calculateTimeLeft());
+    const timer = setInterval(() => setTimeLeft(calculateTimeLeft()), 1000);
+    return () => clearInterval(timer);
+  }, [targetDate]);
+
+  return (
+    <div className="flex gap-2 text-xs font-mono">
+      {timeLeft.days > 0 && (
+        <>
+          <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg">{timeLeft.days}d</span>
+          <span className="text-slate-500">•</span>
+        </>
+      )}
+      <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg">{String(timeLeft.hours).padStart(2, '0')}h</span>
+      <span className="text-slate-500">•</span>
+      <span className="px-2 py-1 bg-orange-500/20 text-orange-400 rounded-lg">{String(timeLeft.minutes).padStart(2, '0')}m</span>
+    </div>
+  );
+};
+
+const EventCard = ({ event, isFeatured = false }) => {
+  const [isLiked, setIsLiked] = useState(false);
+
+  const priceDisplay = event.price === 0 ? "Free" : `${event.currency}${event.price}`;
+
+  if (isFeatured) {
+    return (
+      <div className="group relative overflow-hidden rounded-2xl h-full">
+        {/* Featured card with image and overlay */}
+        <img 
+          src={event.image} 
+          alt={event.title}
+          className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-700"
+        />
+        
+        {/* Gradient Overlay */}
+        <div className="absolute inset-0 bg-gradient-to-t from-black via-black/30 to-transparent" />
+
+        {/* Trending Badge */}
+        {event.trending && (
+          <div className="absolute top-4 left-4">
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-orange-500 to-red-500 rounded-full text-white text-xs font-bold">
+              <TrendingUp size={14} />
+              Trending Now
+            </div>
+          </div>
+        )}
+
+        {/* Like Button */}
+        <button 
+          onClick={() => setIsLiked(!isLiked)}
+          className="absolute top-4 right-4 p-2.5 bg-white/10 backdrop-blur-md rounded-full hover:bg-white/20 transition-all group/heart"
+        >
+          <Heart className={`w-5 h-5 transition-all ${isLiked ? 'fill-red-500 text-red-500 scale-125' : 'text-white'}`} />
+        </button>
+
+        {/* Content */}
+        <div className="absolute inset-0 flex flex-col justify-end p-6">
+          <div className="space-y-3">
+            <div className="flex items-start justify-between">
+              <div className="flex-1">
+                <h3 className="text-2xl font-bold text-white mb-2">{event.title}</h3>
+                <p className="text-sm text-gray-300 flex items-center gap-2">
+                  <MapPin size={14} />
+                  {event.location}
+                </p>
+              </div>
+              <div className="text-right">
+                <div className="text-2xl font-bold text-orange-400">{priceDisplay}</div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-between pt-4 border-t border-white/10">
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-1">
+                  <Star className="w-4 h-4 fill-yellow-400 text-yellow-400" />
+                  <span className="text-sm text-white font-semibold">{event.rating}</span>
+                </div>
+                <span className="text-sm text-gray-400">({event.reviews} reviews)</span>
+              </div>
+              <button className="px-6 py-2 bg-white text-slate-900 rounded-full font-semibold hover:bg-gray-100 transition-all transform hover:scale-105">
+                Book Now
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="group relative bg-slate-800/40 backdrop-blur-sm border border-slate-700/50 rounded-xl overflow-hidden hover:border-slate-600 transition-all duration-500 hover:shadow-2xl hover:shadow-orange-500/10">
+      {/* Image Container */}
+      <div className="relative h-40 overflow-hidden bg-slate-900">
+        <img 
+          src={event.image} 
+          alt={event.title}
+          className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-700"
+        />
+        <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/30 to-transparent" />
+        
+        {/* Category Badge */}
+        <div className="absolute top-3 left-3">
+          <span className="px-2.5 py-1 bg-slate-900/60 backdrop-blur-md rounded-lg text-xs font-bold text-slate-200 border border-slate-700/50">
+            {event.category}
+          </span>
+        </div>
+
+        {/* Like Button */}
+        <button 
+          onClick={() => setIsLiked(!isLiked)}
+          className="absolute top-3 right-3 p-2 bg-slate-900/60 backdrop-blur-md rounded-full hover:bg-slate-800 transition-colors"
+        >
+          <Heart className={`w-4 h-4 transition-all ${isLiked ? 'fill-red-500 text-red-500' : 'text-white'}`} />
+        </button>
+
+        {/* Price */}
+        <div className="absolute bottom-3 left-3">
+          <span className="text-lg font-bold text-orange-400">{priceDisplay}</span>
+        </div>
+      </div>
+
+      {/* Content */}
+      <div className="p-4 space-y-3">
+        <div>
+          <h3 className="text-sm font-bold text-white line-clamp-2 group-hover:text-orange-400 transition-colors">
+            {event.title}
+          </h3>
+          <div className="flex items-center justify-between mt-2">
+            <div className="flex items-center gap-1">
+              <Star className="w-3.5 h-3.5 fill-yellow-400 text-yellow-400" />
+              <span className="text-xs font-semibold text-slate-300">{event.rating}</span>
+            </div>
+            <span className="text-xs text-slate-500">({event.reviews})</span>
+          </div>
+        </div>
+
+        <div className="space-y-1.5 text-slate-400 text-xs">
+          <div className="flex items-center gap-2">
+            <MapPin className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" />
+            <span className="truncate">{event.location}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <Calendar className="w-3.5 h-3.5 text-teal-500 flex-shrink-0" />
+            <span>{new Date(event.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>
+          </div>
+        </div>
+
+        {/* Countdown */}
+        <div className="pt-3 border-t border-slate-700/50">
+          <CountdownTimer targetDate={event.bookingEnds} />
+        </div>
+
+        {/* Action Button */}
+        <button className="w-full py-2 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 rounded-lg text-white text-xs font-bold transition-all transform hover:scale-105 active:scale-95">
+          Book Ticket
+        </button>
+      </div>
+    </div>
+  );
+};
+
+const Hero = () => {
+  const [searchQuery, setSearchQuery] = useState('');
+  const navigate = useNavigate();
+
+  return (
+    <div className="relative min-h-screen overflow-hidden bg-slate-950">
+      {/* Sophisticated Background */}
+      <div className="absolute inset-0">
+        {/* Gradient mesh background */}
+        <div className="absolute inset-0 bg-gradient-to-br from-slate-900 via-slate-950 to-slate-950" />
+        
+        {/* Animated orbs - more subtle */}
+        <div className="absolute top-40 left-1/4 w-80 h-80 bg-teal-600/15 rounded-full blur-3xl animate-pulse" />
+        <div className="absolute bottom-32 right-1/3 w-96 h-96 bg-orange-600/10 rounded-full blur-3xl animate-pulse" style={{ animationDelay: '2s' }} />
+        
+        {/* Radial accent */}
+        <div className="absolute bottom-0 left-1/2 w-full h-1/2 bg-gradient-to-t from-orange-600/5 via-transparent to-transparent -translate-x-1/2" />
+      </div>
+
+      {/* Navigation */}
+      <nav className="fixed top-0 left-0 right-0 z-50 bg-slate-950/80 backdrop-blur-xl border-b border-slate-800/50">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex items-center justify-between h-20">
+            <div className="flex items-center gap-3 group">
+              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center transform group-hover:scale-110 transition-transform">
+                <Zap className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-2xl font-bold text-white">EventVibe</span>
+            </div>
+            
+            <div className="hidden md:flex items-center gap-8">
+              <a href="#" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Explore</a>
+              <a href="#" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">Categories</a>
+              <a href="#" className="text-slate-400 hover:text-white transition-colors text-sm font-medium">My Bookings</a>
+            </div>
+
+            <button onClick={() => navigate("/login")} className="px-6 py-2.5 bg-white text-slate-950 rounded-full font-bold hover:bg-gray-100 transition-all transform hover:scale-105 text-sm">
+              Sign In
+            </button>
+          </div>
+        </div>
+      </nav>
+
+      {/* Hero Content */}
+      <div className="relative z-10 pt-32 pb-20 px-4">
+        <div className="max-w-6xl mx-auto">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+            {/* Left Column - Text */}
+            <div className="space-y-8">
+              <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-orange-500/10 border border-orange-500/30 w-fit">
+                <div className="w-2 h-2 bg-orange-500 rounded-full animate-pulse" />
+                <span className="text-orange-400 text-sm font-semibold">Discover Amazing Events</span>
+              </div>
+
+              <div className="space-y-6">
+                <h1 className="text-6xl md:text-7xl font-bold text-white leading-tight">
+                  Unforgettable 
+                  <span className="block text-transparent bg-clip-text bg-gradient-to-r from-orange-400 via-red-400 to-orange-400">
+                    Moments Await
+                  </span>
+                </h1>
+
+                <p className="text-lg text-slate-400 leading-relaxed max-w-xl">
+                  From electrifying concerts to inspiring conferences. Discover, book, and experience events that transform your world. Your next unforgettable moment is just one click away.
+                </p>
+
+                <div className="flex gap-4 pt-4">
+                  <button className="px-8 py-4 bg-gradient-to-r from-orange-500 to-red-500 hover:from-orange-600 hover:to-red-600 rounded-full text-white font-bold text-lg transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-orange-500/30">
+                    Explore Events
+                  </button>
+                  <button className="px-8 py-4 border-2 border-slate-700 hover:border-slate-600 rounded-full text-white font-bold text-lg transition-all">
+                    Learn More
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column - Featured Event */}
+            <div className="hidden lg:block">
+              <div className="relative">
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-600/20 to-red-600/20 rounded-2xl blur-2xl" />
+                <div className="relative rounded-2xl overflow-hidden h-96">
+                  <EventCard event={EVENTS_DATA[0]} isFeatured={true} />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Search Section */}
+          <div className="mt-20">
+            <div className="bg-slate-800/30 backdrop-blur-xl border border-slate-700/50 rounded-2xl p-6">
+              <div className="flex flex-col md:flex-row gap-3">
+                <div className="flex-1 flex items-center gap-3 px-4 py-3 bg-slate-900/50 rounded-xl border border-slate-700/50">
+                  <Search className="w-5 h-5 text-slate-400" />
+                  <input 
+                    type="text"
+                    placeholder="Search events, performers, locations..."
+                    className="flex-1 bg-transparent text-white placeholder-slate-500 outline-none text-sm"
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                  />
+                </div>
+                
+                <button className="px-6 py-3 bg-gradient-to-r from-orange-500 to-red-500 rounded-xl text-white font-bold transition-all transform hover:scale-105">
+                  Search
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const CategorySection = ({ selectedCategory, setSelectedCategory }) => {
+  return (
+    <section className="py-16 bg-slate-950 relative">
+      <div className="max-w-7xl mx-auto px-4">
+        <div className="mb-10">
+          <h2 className="text-4xl font-bold text-white mb-2">Browse by Category</h2>
+          <p className="text-slate-400">Find events that match your vibe</p>
+        </div>
+
+        <div className="flex flex-wrap gap-3">
+          {CATEGORIES.map((cat) => (
+            <button
+              key={cat.name}
+              onClick={() => setSelectedCategory(cat.name)}
+              className={`group relative px-6 py-3 rounded-full transition-all duration-300 font-semibold text-sm ${
+                selectedCategory === cat.name 
+                  ? 'bg-white text-slate-900 scale-105 shadow-lg shadow-orange-500/30' 
+                  : 'bg-slate-800/60 text-slate-300 hover:bg-slate-700/80 hover:text-white'
+              }`}
+            >
+              <div className="flex items-center gap-2">
+                <span>{cat.icon}</span>
+                <span>{cat.name}</span>
+              </div>
+              {selectedCategory === cat.name && (
+                <div className={`absolute inset-0 bg-gradient-to-r ${cat.color} opacity-30 rounded-full blur-xl -z-10`} />
+              )}
+            </button>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const EventsSection = ({ selectedCategory }) => {
+  const filteredEvents = selectedCategory === 'All' 
+    ? EVENTS_DATA 
+    : EVENTS_DATA.filter(e => e.category === selectedCategory);
+
+  const trendingEvents = filteredEvents.filter(e => e.trending).slice(0, 2);
+  const otherEvents = filteredEvents.filter(e => !e.trending);
+
+  return (
+    <section className="py-20 bg-slate-950 relative">
+      <div className="max-w-7xl mx-auto px-4">
+        {/* Featured Grid */}
+        {trendingEvents.length > 0 && (
+          <div className="mb-20">
+            <h2 className="text-3xl font-bold text-white mb-8">Featured Events</h2>
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-12">
+              {trendingEvents.map((event) => (
+                <div key={event.id} className="h-80 rounded-xl overflow-hidden">
+                  <EventCard event={event} isFeatured={true} />
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* All Events */}
+        <div>
+          <div className="flex items-center justify-between mb-8">
+            <h2 className="text-3xl font-bold text-white">All Events</h2>
+            <button className="group flex items-center gap-2 px-6 py-3 border border-slate-700 hover:border-slate-600 rounded-full text-white hover:bg-slate-800/30 transition-all">
+              View All
+              <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
+            {otherEvents.map((event) => (
+              <EventCard key={event.id} event={event} isFeatured={false} />
+            ))}
+          </div>
+        </div>
+      </div>
+    </section>
+  );
+};
+
+const Footer = () => {
+  return (
+    <footer className="bg-slate-950 border-t border-slate-800/50 pt-20 pb-10">
+      <div className="max-w-7xl mx-auto px-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-12 mb-16">
+          <div className="space-y-4">
+            <div className="flex items-center gap-3 group">
+              <div className="w-10 h-10 bg-gradient-to-br from-orange-500 to-red-500 rounded-lg flex items-center justify-center group-hover:scale-110 transition-transform">
+                <Zap className="w-6 h-6 text-white" />
+              </div>
+              <span className="text-2xl font-bold text-white">EventVibe</span>
+            </div>
+            <p className="text-slate-400 text-sm leading-relaxed">
+              Discover, book, and experience unforgettable moments. From concerts to conferences, we connect you with events that matter.
+            </p>
+          </div>
+
+          <div>
+            <h4 className="text-white font-bold mb-4 text-sm">Discover</h4>
+            <ul className="space-y-3">
+              {['All Events', 'Entertainment', 'Conferences', 'Sports', 'Exhibitions', 'Education'].map((item) => (
+                <li key={item}>
+                  <a href="#" className="text-slate-400 hover:text-white transition-colors text-sm">{item}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-white font-bold mb-4 text-sm">Support</h4>
+            <ul className="space-y-3">
+              {['Help Center', 'Terms of Service', 'Privacy Policy', 'Contact Us', 'Refund Policy'].map((item) => (
+                <li key={item}>
+                  <a href="#" className="text-slate-400 hover:text-white transition-colors text-sm">{item}</a>
+                </li>
+              ))}
+            </ul>
+          </div>
+
+          <div>
+            <h4 className="text-white font-bold mb-4 text-sm">Get in Touch</h4>
+            <div className="space-y-3 text-sm">
+              <p className="text-orange-400 font-bold text-lg">+(91) 89254 29922</p>
+              <p className="text-slate-400">hello@eventvibe.com</p>
+              <div className="flex gap-3 pt-4">
+                {['f', 'in', 'tw', 'ig', 'yt'].map((social) => (
+                  <a key={social} href="#" className="w-9 h-9 bg-slate-800 hover:bg-orange-500 rounded-full flex items-center justify-center transition-colors">
+                    <span className="text-white text-xs font-bold">{social}</span>
+                  </a>
+                ))}
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="pt-8 border-t border-slate-800/50 flex flex-col md:flex-row items-center justify-between gap-4">
+          <p className="text-slate-500 text-xs">© 2026 EventVibe. All rights reserved.</p>
+          <div className="flex gap-6 text-xs">
+            <a href="#" className="text-slate-500 hover:text-white transition-colors">Privacy</a>
+            <a href="#" className="text-slate-500 hover:text-white transition-colors">Terms</a>
+            <a href="#" className="text-slate-500 hover:text-white transition-colors">Cookies</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+  );
+};
+
+const App = () => {
+  const [selectedCategory, setSelectedCategory] = useState('All');
+
+  return (
+    <div className="min-h-screen bg-slate-950 text-white font-sans selection:bg-orange-500/30">
+      <Hero />
+      <CategorySection 
+        selectedCategory={selectedCategory} 
+        setSelectedCategory={setSelectedCategory} 
+      />
+      <EventsSection selectedCategory={selectedCategory} />
+      <Footer />
+    </div>
+  );
+};
+
+export default App;
