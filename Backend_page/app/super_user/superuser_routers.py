@@ -7,7 +7,6 @@ superuser_bp = Blueprint("superuser", __name__)
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 UPLOAD_FOLDER = os.path.abspath(os.path.join(BASE_DIR, "..", "uploads"))
-print(os.path.exists("D:/Project/app/uploads/photos/download_2.jpg"))
 
 
 def create_default_superuser():
