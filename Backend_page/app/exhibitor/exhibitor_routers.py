@@ -17,7 +17,6 @@ def book_stall():
         data = request.form
 
         event_id = data.get("event_id")
-        user_id = data.get("user_id")
 
         email = data.get("email")
 
@@ -79,23 +78,41 @@ def book_stall():
 
         query = """
         INSERT INTO Exhibitor_stall_bookings (
-            user_id,event_id, title, first_name, last_name, email, mobile,
+            user_id, event_id, eventName,
+            title, first_name, last_name, email, mobile,
             designation, company_name,
             country, state, city, address, pin_code,
-            stall_area, products,messages,visiting_card
+            stall_area, products, messages, visiting_card
         )
-        VALUES (%s,%s, %s, %s, %s, %s, %s,
-                %s, %s,
-                %s, %s, %s, %s, %s,
-                %s, %s, %s,%s)
+        VALUES (
+            %s, %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s,
+            %s, %s, %s, %s, %s,
+            %s, %s, %s, %s
+        )
         """
 
         values = (
             user_id,
-            event_id, title, first_name, last_name, email, mobile,
-            designation, company_name,
-            country, state, city, address, pin_code,
-            stall_area, products, messages,visiting_card_path,eventname
+            event_id,
+            eventname,
+            title,
+            first_name,
+            last_name,
+            email,
+            mobile,
+            designation,
+            company_name,
+            country,
+            state,
+            city,
+            address,
+            pin_code,
+            stall_area,
+            products,
+            messages,
+            visiting_card_path
         )
 
         cursor.execute(query, values)
