@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { Eye, EyeOff, ArrowRight, Sparkles, CheckCircle2, AlertCircle, Lock, Mail, User, Shield } from "lucide-react";
-
+import { registerUser } from "../Services/api";
 export default function Register() {
   const navigate = useNavigate();
 
@@ -98,39 +98,22 @@ const handleKeyDown = (e) => {
     setIsLoading(true);
 
     try {
-      const response = await fetch("http://127.0.0.1:5000/auth/api/register", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          name: formData.name,
-          email: formData.email,
-          password: formData.password,
-          role: formData.role
-        })
+      await registerUser(formData);
+
+      setMessage("Registration successful. Redirecting to login...");
+
+      setFormData({
+        name: "",
+        email: "",
+        password: "",
+        confirm_password: "",
+        role: "",
       });
 
-      const data = await response.json();
+      setTimeout(() => navigate("/login"), 1000);
 
-      if (response.ok) {
-        setMessage("Registration successful. Redirecting to login...");
-        setFormData({
-          name: "",
-          email: "",
-          password: "",
-          confirm_password: "",
-          role: ""
-        });
-
-        setTimeout(() => {
-          navigate("/login");
-        }, 1000);
-      } else {
-        setError(data.message);
-      }
-    } catch {
-      setError("Server error. Please try again.");
+    } catch (error) {
+      setError(error?.response?.data?.message || "Server error. Please try again.");
     } finally {
       setIsLoading(false);
     }
