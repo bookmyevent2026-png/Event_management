@@ -26,7 +26,8 @@ export const loginUser = (formData) => {
   return api.post("/auth/api/login", formData);
 };
 
-// REGISTER API
+
+/* REGISTER API
 export const registerUser = async (email, password) => {
 
   const response = await api.post("/register", {
@@ -35,6 +36,10 @@ export const registerUser = async (email, password) => {
   });
 
   return response.data;
+};*/
+
+export const registerUser = (formData) => {
+  return api.post("/auth/api/register", formData);
 };
 
 
