@@ -5,7 +5,6 @@ import {
   BarChart3,
   CalendarDays,
   Mic,
-  CheckCircle,
   DatabaseSearch,
   Backpack,
   CircleCheckBig,
