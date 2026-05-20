@@ -10,12 +10,18 @@ import {
   AlertCircle,
   ChevronDown,
   Search,
+  X,
+  Eye,
+  Edit,
 } from "lucide-react";
 import {
   getVendorTypes,
   getVendorNames,
   getSponsorNames,
+  createVendor,
+  createSponsor
 } from "../../../../Services/api";
+import { useSelector } from "react-redux";
 
 const Step6VendorSponsor = ({ formData, setFormData }) => {
   // ===========================
@@ -51,6 +57,91 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
   const [designation, setDesignation] = useState("");
   const [contact, setContact] = useState("");
   const [guestList, setGuestList] = useState([]);
+  const [previewModal, setPreviewModal] = useState({ open: false, url: "" });
+
+  const Redexorganizer = useSelector((state) => state.user);
+  const storedUser = {
+    id: sessionStorage.getItem("userId"),
+    name: sessionStorage.getItem("userName"),
+  };
+  const organizer = Redexorganizer?.id ? Redexorganizer : storedUser;
+
+  // New states for Quick Add
+  const [showAddVendorModal, setShowAddVendorModal] = useState(false);
+  const [showAddSponsorModal, setShowAddSponsorModal] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [toast, setToast] = useState({ show: false, message: "", type: "success" });
+
+  const [editingVendorIndex, setEditingVendorIndex] = useState(null);
+  const [editingSponsorIndex, setEditingSponsorIndex] = useState(null);
+  const [editingGuestIndex, setEditingGuestIndex] = useState(null);
+
+  const showNotification = (message, type = "success") => {
+    setToast({ show: true, message, type });
+    setTimeout(() => {
+      setToast({ show: false, message: "", type: "success" });
+    }, 3000);
+  };
+
+  const [newVendor, setNewVendor] = useState({
+    vendor_type: "",
+    vendor_name: "",
+    company_name: "",
+    primary_contact: "",
+    mail_id: "",
+    address: "",
+    status: "Active"
+  });
+
+  const [newSponsor, setNewSponsor] = useState({
+    sponsor_name: "",
+    primary_contact: "",
+    mail_id: "",
+    address: "",
+    status: "Active"
+  });
+
+  const [fieldErrors, setFieldErrors] = useState({});
+
+  const loadVendorTypes = async () => {
+    try {
+      const data = await getVendorTypes();
+      // Ensure unique categories
+      const uniqueData = Array.from(
+        new Map(data.map((item) => [item.vendor_type, item])).values(),
+      );
+      setVendorTypes(uniqueData);
+    } catch (err) {
+      console.error("Vendor Types Error:", err);
+    }
+  };
+
+  const loadVendorNames = async () => {
+    if (!vendorType) return;
+    try {
+      const data = await getVendorNames(vendorType);
+      // Ensure unique names
+      const uniqueData = Array.from(
+        new Map(data.map((item) => [item.vendor_name, item])).values(),
+      );
+      setVendorNames(uniqueData);
+    } catch (err) {
+      console.error("Vendor Names Error:", err);
+    }
+  };
+
+  const loadSponsors = async () => {
+    try {
+      const data = await getSponsorNames();
+      // Ensure unique sponsors
+      const uniqueData = Array.from(
+        new Map(data.map((item) => [item.sponsor_name, item])).values(),
+      );
+      setSponsorNames(uniqueData);
+    } catch (err) {
+      console.error("Sponsor Error:", err);
+    }
+  };
 
   // Click away listener for dropdowns
   useEffect(() => {
@@ -99,42 +190,16 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
 
   // Vendor Types
   useEffect(() => {
-    const loadVendorTypes = async () => {
-      try {
-        const data = await getVendorTypes();
-        setVendorTypes(data);
-      } catch (err) {
-        console.error("Vendor Types Error:", err);
-      }
-    };
     loadVendorTypes();
   }, []);
 
   // Vendor Names based on type
   useEffect(() => {
-    if (!vendorType) return;
-
-    const loadVendorNames = async () => {
-      try {
-        const data = await getVendorNames(vendorType);
-        setVendorNames(data);
-      } catch (err) {
-        console.error("Vendor Names Error:", err);
-      }
-    };
     loadVendorNames();
   }, [vendorType]);
 
   // Sponsor Names
   useEffect(() => {
-    const loadSponsors = async () => {
-      try {
-        const data = await getSponsorNames();
-        setSponsorNames(data);
-      } catch (err) {
-        console.error("Sponsor Error:", err);
-      }
-    };
     loadSponsors();
   }, []);
 
@@ -160,15 +225,27 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
   // ===========================
 
   const addVendor = () => {
-    if (!vendorType || !vendorName) return;
+    if (!vendorType || !vendorName) {
+      showNotification("Please select both category and provider", "error");
+      return;
+    }
 
-    const newVendor = {
+    const newVendorData = {
       vendorType,
       vendorName,
-      passCount: 0,
+      passCount: 1, // Default to 1 on add
     };
 
-    setVendorList((prev) => [...prev, newVendor]);
+    if (editingVendorIndex !== null) {
+      const updated = [...vendorList];
+      updated[editingVendorIndex] = newVendorData;
+      setVendorList(updated);
+      setEditingVendorIndex(null);
+      showNotification("Vendor updated in list!");
+    } else {
+      setVendorList((prev) => [...prev, newVendorData]);
+      showNotification("Vendor added to list!");
+    }
 
     setVendorType("");
     setVendorName("");
@@ -176,17 +253,38 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
 
   const removeVendor = (index) => {
     setVendorList((prev) => prev.filter((_, i) => i !== index));
+    showNotification("Vendor removed from list", "error");
+  };
+
+  const editVendor = (index) => {
+    const item = vendorList[index];
+    setVendorType(item.vendorType);
+    setVendorName(item.vendorName);
+    setEditingVendorIndex(index);
+    showNotification("Editing vendor selection...", "success");
   };
 
   const addSponsor = () => {
-    if (!sponsorName || !sponsorship) return;
+    if (!sponsorName || !sponsorship) {
+      showNotification("Please select both partner and tier", "error");
+      return;
+    }
 
     const newSponsor = {
       sponsorName,
       sponsorship,
     };
 
-    setSponsorList((prev) => [...prev, newSponsor]);
+    if (editingSponsorIndex !== null) {
+      const updated = [...sponsorList];
+      updated[editingSponsorIndex] = newSponsor;
+      setSponsorList(updated);
+      setEditingSponsorIndex(null);
+      showNotification("Sponsor updated in list!");
+    } else {
+      setSponsorList((prev) => [...prev, newSponsor]);
+      showNotification("Sponsor added to list!");
+    }
 
     setSponsorName("");
     setSponsorship("");
@@ -194,6 +292,15 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
 
   const removeSponsor = (index) => {
     setSponsorList((prev) => prev.filter((_, i) => i !== index));
+    showNotification("Sponsor removed from list", "error");
+  };
+
+  const editSponsor = (index) => {
+    const item = sponsorList[index];
+    setSponsorName(item.sponsorName);
+    setSponsorship(item.sponsorship);
+    setEditingSponsorIndex(index);
+    showNotification("Editing sponsor selection...", "success");
   };
 
   const handleGuestImage = (e) => {
@@ -206,7 +313,10 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
 
   const addGuest = () => {
     // Basic validation
-    if (!guestName.trim() || !contact.trim()) return;
+    if (!guestName.trim() || !contact.trim()) {
+      showNotification("Name and contact are required", "error");
+      return;
+    }
 
     // Letters Only validation for name
     if (!/^[a-zA-Z\s]*$/.test(guestName)) return;
@@ -221,7 +331,16 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
       image: guestImage?.preview || "",
     };
 
-    setGuestList((prev) => [...prev, newGuest]);
+    if (editingGuestIndex !== null) {
+      const updated = [...guestList];
+      updated[editingGuestIndex] = newGuest;
+      setGuestList(updated);
+      setEditingGuestIndex(null);
+      showNotification("Guest details updated!");
+    } else {
+      setGuestList((prev) => [...prev, newGuest]);
+      showNotification("Guest added to list!");
+    }
 
     setGuestImage(null);
     setGuestName("");
@@ -231,6 +350,134 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
 
   const removeGuest = (index) => {
     setGuestList((prev) => prev.filter((_, i) => i !== index));
+    showNotification("Guest removed from list", "error");
+  };
+
+  const editGuest = (index) => {
+    const item = guestList[index];
+    setGuestName(item.name);
+    setDesignation(item.designation);
+    setContact(item.contact);
+    if (item.image) {
+      setGuestImage({ preview: item.image, file: null });
+    } else {
+      setGuestImage(null);
+    }
+    setEditingGuestIndex(index);
+    showNotification("Editing guest details...", "success");
+  };
+
+  const updateVendorPassCount = (index, delta) => {
+    setVendorList(prev => {
+      const updated = [...prev];
+      const newCount = Math.max(0, (updated[index].passCount || 0) + delta);
+      updated[index] = { ...updated[index], passCount: newCount };
+      return updated;
+    });
+  };
+
+  const handleCreateVendor = async (e) => {
+    e.preventDefault();
+    const errors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!newVendor.vendor_type) errors.vendor_type = "Required";
+    if (!newVendor.vendor_name.trim()) {
+      errors.vendor_name = "Name required";
+    } else if (newVendor.vendor_name.length > 30) {
+      errors.vendor_name = "Max 30 chars";
+    }
+
+    if (!newVendor.company_name.trim()) errors.company_name = "Required";
+
+    if (!newVendor.primary_contact.trim()) {
+      errors.primary_contact = "Required";
+    } else if (!/^\d{10}$/.test(newVendor.primary_contact)) {
+      errors.primary_contact = "10 digits required";
+    }
+
+    if (!newVendor.mail_id.trim()) {
+      errors.mail_id = "Required";
+    } else if (!emailRegex.test(newVendor.mail_id)) {
+      errors.mail_id = "Invalid email";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await createVendor({ ...newVendor, organizer_id: organizer.id });
+      await loadVendorTypes();
+      await loadVendorNames();
+      showNotification("Vendor created successfully!");
+      setShowAddVendorModal(false);
+      setNewVendor({
+        vendor_type: "",
+        vendor_name: "",
+        company_name: "",
+        primary_contact: "",
+        mail_id: "",
+        address: "",
+        status: "Active"
+      });
+      setFieldErrors({});
+    } catch (error) {
+      console.error("Vendor Create Error:", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleCreateSponsor = async (e) => {
+    e.preventDefault();
+    const errors = {};
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+    if (!newSponsor.sponsor_name.trim()) {
+      errors.sponsor_name = "Name required";
+    } else if (newSponsor.sponsor_name.length > 30) {
+      errors.sponsor_name = "Max 30 chars";
+    }
+
+    if (!newSponsor.primary_contact.trim()) {
+      errors.primary_contact = "Required";
+    } else if (!/^\d{10}$/.test(newSponsor.primary_contact)) {
+      errors.primary_contact = "10 digits required";
+    }
+
+    if (!newSponsor.mail_id.trim()) {
+      errors.mail_id = "Required";
+    } else if (!emailRegex.test(newSponsor.mail_id)) {
+      errors.mail_id = "Invalid email";
+    }
+
+    if (Object.keys(errors).length > 0) {
+      setFieldErrors(errors);
+      return;
+    }
+
+    try {
+      setLoading(true);
+      await createSponsor({ ...newSponsor, organizer_id: organizer.id });
+      await loadSponsors();
+      showNotification("Sponsor created successfully!");
+      setShowAddSponsorModal(false);
+      setNewSponsor({
+        sponsor_name: "",
+        primary_contact: "",
+        mail_id: "",
+        address: "",
+        status: "Active"
+      });
+      setFieldErrors({});
+    } catch (error) {
+      console.error("Sponsor Create Error:", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // ===========================
@@ -255,11 +502,9 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
   };
 
   const handleContactChange = (e) => {
-    const value = e.target.value;
-    if (value === "" || /^\d*$/.test(value)) {
-      if (value.length <= 10) {
-        setContact(value);
-      }
+    const val = e.target.value.replace(/\D/g, "");
+    if (val.length <= 10) {
+      setContact(val);
     }
   };
 
@@ -276,7 +521,7 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
   const sectionTitleClasses =
     "text-xl font-bold text-gray-800 mb-4 border-l-4 border-purple-500 pl-4 flex items-center gap-3";
   const tableHeaderClasses =
-    "bg-gray-50/50 text-slate-900 text-sm font-bold tracking-wider p-4 text-left first:rounded-l-2xl last:rounded-r-2xl";
+    "bg-gray-50 text-slate-900 text-sm font-bold tracking-wider p-4 text-left first:rounded-l-2xl last:rounded-r-2xl";
   const tableCellClasses =
     "p-4 text-sm text-black border-b border-gray-50/50 font-bold";
   const actionButtonClasses =
@@ -284,16 +529,36 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
 
   return (
     <div className="max-w-[1600px] mx-auto px-6 py-4 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
+      {/* TOAST NOTIFICATION */}
+      {toast.show && (
+        <div className={`fixed top-10 right-10 z-[2000] px-6 py-4 rounded-2xl shadow-2xl animate-in slide-in-from-right-10 duration-500 flex items-center gap-4 border ${toast.type === "success"
+          ? "bg-emerald-600 text-white border-emerald-500 shadow-emerald-200"
+          : "bg-rose-600 text-white border-rose-500 shadow-rose-200"
+          }`}>
+          <div className="w-8 h-8 rounded-full bg-white/20 flex items-center justify-center font-bold">
+            {toast.type === "success" ? "✓" : "!"}
+          </div>
+          <p className="font-bold text-sm tracking-wide">{toast.message}</p>
+        </div>
+      )}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-8">
         {/* ================= Vendor ================= */}
         <div className={cardClasses}>
           <div>
-            <h2 className={sectionTitleClasses}>
-              <div className="p-2 bg-purple-50 rounded-xl">
-                <Users size={22} className="text-purple-600" />
-              </div>
-              Vendor Details
-            </h2>
+            <div className="flex justify-between items-center mb-4 border-l-4 border-purple-500 pl-4">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-3">
+                <div className="p-2 bg-purple-50 rounded-xl">
+                  <Users size={22} className="text-purple-600" />
+                </div>
+                Vendor Details
+              </h2>
+              <button
+                onClick={() => setShowAddVendorModal(true)}
+                className="flex items-center gap-1 text-[10px] font-bold text-purple-600 bg-purple-50 px-2 py-1 rounded-full hover:bg-purple-100 transition-all"
+              >
+                <Plus size={12} /> Add New
+              </button>
+            </div>
 
             <div className="space-y-3">
               <div className="space-y-1 relative vendor-type-dropdown">
@@ -416,14 +681,25 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
                   )}
                 </div>
               </div>
-
               <button
                 onClick={addVendor}
                 disabled={!vendorType || !vendorName}
                 className={actionButtonClasses}
               >
-                <Plus size={18} strokeWidth={2.5} /> Add to List
+                <Plus size={18} strokeWidth={2.5} /> {editingVendorIndex !== null ? "Update Selection" : "Add to List"}
               </button>
+              {editingVendorIndex !== null && (
+                <button
+                  onClick={() => {
+                    setEditingVendorIndex(null);
+                    setVendorType("");
+                    setVendorName("");
+                  }}
+                  className="w-full py-2 text-[10px] font-bold text-gray-400 hover:text-red-500 transition-all"
+                >
+                  Cancel Edit
+                </button>
+              )}
             </div>
           </div>
 
@@ -432,33 +708,42 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
               <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
                 <table className="w-full">
                   <thead className="sticky top-0 z-10">
-                    <tr>
+                    <tr className="bg-gray-50">
+                      <th className={tableHeaderClasses}>Action</th>
                       <th className={tableHeaderClasses}>Vendor</th>
                       <th className={tableHeaderClasses}>Type</th>
-                      <th
-                        className={`${tableHeaderClasses} text-right w-16`}
-                      ></th>
+                      <th className={tableHeaderClasses}>Passes</th>
                     </tr>
                   </thead>
                   <tbody>
                     {vendorList.length === 0 ? (
                       <tr>
-                        <td colSpan="3" className="p-10 text-center">
-                          <div className="flex flex-col items-center gap-2 opacity-30">
-                            <Users size={32} />
-                            <p className="text-xs font-medium uppercase tracking-widest">
-                              Empty List
-                            </p>
-                          </div>
+                        <td colSpan="3" className="p-10 text-center text-gray-400">
+                          No vendors selected
                         </td>
                       </tr>
                     ) : (
                       vendorList.map((v, i) => (
-                        <tr key={i} className="hover:bg-sky-50/50 transition-colors duration-200 group"
-                        >
-                          <td
-                            className={`${tableCellClasses} font-semibold text-gray-800`}
-                          >
+                        <tr key={i} className={`group hover:bg-gray-50/80 transition-colors ${editingVendorIndex === i ? 'bg-sky-50' : ''}`}>
+                          <td className={tableCellClasses}>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => editVendor(i)}
+                                className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                title="Edit"
+                              >
+                                <Edit size={14} />
+                              </button>
+                              <button
+                                onClick={() => removeVendor(i)}
+                                className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                title="Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                          <td className={`${tableCellClasses} font-semibold text-gray-800`}>
                             {v.vendorName}
                           </td>
                           <td className={tableCellClasses}>
@@ -466,13 +751,24 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
                               {v.vendorType}
                             </span>
                           </td>
-                          <td className={`${tableCellClasses} text-right`}>
-                            <button
-                              onClick={() => removeVendor(i)}
-                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                          <td className={tableCellClasses}>
+                            <div className="flex items-center gap-2 bg-gray-50 p-1 rounded-lg border border-gray-100 w-fit">
+                              <button
+                                onClick={() => updateVendorPassCount(i, -1)}
+                                className="w-7 h-7 rounded bg-white shadow-sm flex items-center justify-center text-gray-600 hover:bg-red-50 hover:text-red-600 transition-all font-bold border border-gray-100"
+                              >
+                                -
+                              </button>
+                              <span className="w-8 text-center font-bold text-gray-800 text-xs">
+                                {v.passCount || 0}
+                              </span>
+                              <button
+                                onClick={() => updateVendorPassCount(i, 1)}
+                                className="w-7 h-7 rounded bg-white shadow-sm flex items-center justify-center text-gray-600 hover:bg-emerald-50 hover:text-emerald-600 transition-all font-bold border border-gray-100"
+                              >
+                                +
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       ))
@@ -487,12 +783,20 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
         {/* ================= Sponsor ================= */}
         <div className={cardClasses}>
           <div>
-            <h2 className={sectionTitleClasses}>
-              <div className="p-2 bg-indigo-50 rounded-xl">
-                <Award size={22} className="text-indigo-600" />
-              </div>
-              Sponsorships
-            </h2>
+            <div className="flex justify-between items-center mb-4 border-l-4 border-indigo-500 pl-4">
+              <h2 className="text-xl font-bold text-gray-800 flex items-center gap-3">
+                <div className="p-2 bg-indigo-50 rounded-xl">
+                  <Award size={22} className="text-indigo-600" />
+                </div>
+                Sponsorships
+              </h2>
+              <button
+                onClick={() => setShowAddSponsorModal(true)}
+                className="flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-1 rounded-full hover:bg-indigo-100 transition-all"
+              >
+                <Plus size={12} /> Add New
+              </button>
+            </div>
 
             <div className="space-y-3">
               <div className="space-y-1 relative sponsor-name-dropdown">
@@ -618,8 +922,20 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
                 disabled={!sponsorName || !sponsorship}
                 className={actionButtonClasses}
               >
-                <Plus size={18} strokeWidth={2.5} /> Confirm Sponsor
+                <Plus size={18} strokeWidth={2.5} /> {editingSponsorIndex !== null ? "Update Selection" : "Confirm Sponsor"}
               </button>
+              {editingSponsorIndex !== null && (
+                <button
+                  onClick={() => {
+                    setEditingSponsorIndex(null);
+                    setSponsorName("");
+                    setSponsorship("");
+                  }}
+                  className="w-full py-2 text-[10px] font-bold text-gray-400 hover:text-red-500 transition-all"
+                >
+                  Cancel Edit
+                </button>
+              )}
             </div>
           </div>
 
@@ -628,47 +944,47 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
               <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
                 <table className="w-full">
                   <thead className="sticky top-0 z-10">
-                    <tr>
+                    <tr className="bg-gray-50">
+                      <th className={tableHeaderClasses}>Action</th>
                       <th className={tableHeaderClasses}>Sponsor</th>
                       <th className={tableHeaderClasses}>Tier</th>
-                      <th
-                        className={`${tableHeaderClasses} text-right w-16`}
-                      ></th>
                     </tr>
                   </thead>
                   <tbody>
                     {sponsorList.length === 0 ? (
                       <tr>
-                        <td colSpan="3" className="p-10 text-center">
-                          <div className="flex flex-col items-center gap-2 opacity-30">
-                            <Award size={32} />
-                            <p className="text-xs font-medium uppercase tracking-widest">
-                              No Sponsors
-                            </p>
-                          </div>
+                        <td colSpan="3" className="p-10 text-center text-gray-400">
+                          No sponsors selected
                         </td>
                       </tr>
                     ) : (
                       sponsorList.map((s, i) => (
-                        <tr key={i} className="hover:bg-sky-50/50 transition-colors duration-200 group"
-                        >
-                          <td
-                            className={`${tableCellClasses} font-semibold text-gray-800`}
-                          >
+                        <tr key={i} className={`group hover:bg-gray-50/80 transition-colors ${editingSponsorIndex === i ? 'bg-sky-50' : ''}`}>
+                          <td className={tableCellClasses}>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => editSponsor(i)}
+                                className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                title="Edit"
+                              >
+                                <Edit size={14} />
+                              </button>
+                              <button
+                                onClick={() => removeSponsor(i)}
+                                className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                title="Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
+                            </div>
+                          </td>
+                          <td className={`${tableCellClasses} font-semibold text-gray-800`}>
                             {s.sponsorName}
                           </td>
                           <td className={tableCellClasses}>
                             <span className="px-3 py-1 bg-indigo-50 text-indigo-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
                               {s.sponsorship}
                             </span>
-                          </td>
-                          <td className={`${tableCellClasses} text-right`}>
-                            <button
-                              onClick={() => removeSponsor(i)}
-                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
                           </td>
                         </tr>
                       ))
@@ -712,12 +1028,22 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
                         alt="guest"
                         className="w-full h-full object-cover"
                       />
-                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center">
-                        <Trash2
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-all duration-300 flex items-center justify-center gap-3">
+                        <Eye
                           size={18}
-                          className="text-white hover:scale-110 transition-transform"
+                          className="text-white hover:scale-110 transition-transform cursor-pointer"
                           onClick={(e) => {
                             e.preventDefault();
+                            e.stopPropagation();
+                            setPreviewModal({ open: true, url: guestImage.preview });
+                          }}
+                        />
+                        <Trash2
+                          size={18}
+                          className="text-white hover:scale-110 transition-transform cursor-pointer"
+                          onClick={(e) => {
+                            e.preventDefault();
+                            e.stopPropagation();
                             setGuestImage(null);
                           }}
                         />
@@ -761,6 +1087,7 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
               <div className="relative">
                 <input
                   placeholder="Contact Number (Digits only)"
+                  maxLength={10}
                   value={contact}
                   onChange={handleContactChange}
                   className={inputClasses}
@@ -775,8 +1102,22 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
                 disabled={!guestName || !contact}
                 className={actionButtonClasses}
               >
-                <Plus size={18} strokeWidth={2.5} /> Invite Guest
+                <Plus size={18} strokeWidth={2.5} /> {editingGuestIndex !== null ? "Update Guest" : "Invite Guest"}
               </button>
+              {editingGuestIndex !== null && (
+                <button
+                  onClick={() => {
+                    setEditingGuestIndex(null);
+                    setGuestName("");
+                    setDesignation("");
+                    setContact("");
+                    setGuestImage(null);
+                  }}
+                  className="w-full py-2 text-[10px] font-bold text-gray-400 hover:text-red-500 transition-all"
+                >
+                  Cancel Edit
+                </button>
+              )}
             </div>
           </div>
 
@@ -785,61 +1126,64 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
               <div className="max-h-[300px] overflow-y-auto scrollbar-hide">
                 <table className="w-full">
                   <thead className="sticky top-0 z-10">
-                    <tr>
-                      <th className={tableHeaderClasses}>Guest Info</th>
-                      <th
-                        className={`${tableHeaderClasses} text-right w-16`}
-                      ></th>
+                    <tr className="bg-gray-50">
+                      <th className={tableHeaderClasses}>Action</th>
+                      <th className={tableHeaderClasses}>Image</th>
+                      <th className={tableHeaderClasses}>Guest Name</th>
+                      <th className={tableHeaderClasses}>Designation</th>
+                      <th className={tableHeaderClasses}>Contact Number</th>
                     </tr>
                   </thead>
                   <tbody>
                     {guestList.length === 0 ? (
                       <tr>
-                        <td colSpan="2" className="p-10 text-center">
-                          <div className="flex flex-col items-center gap-2 opacity-30">
-                            <UserPlus size={32} />
-                            <p className="text-xs font-medium uppercase tracking-widest">
-                              No Guests
-                            </p>
-                          </div>
+                        <td colSpan="5" className="p-10 text-center text-gray-400">
+                          No guests added
                         </td>
                       </tr>
                     ) : (
                       guestList.map((g, i) => (
-                        <tr key={i} className="hover:bg-sky-50/50 transition-colors duration-200 group"
-                        >
+                        <tr key={i} className={`group hover:bg-gray-50/80 transition-colors ${editingGuestIndex === i ? 'bg-sky-50' : ''}`}>
                           <td className={tableCellClasses}>
-                            <div className="flex items-center gap-4">
-                              <div className="relative">
-                                {g.image ? (
-                                  <img
-                                    src={g.image}
-                                    alt=""
-                                    className="w-10 h-10 rounded-2xl object-cover ring-2 ring-white shadow-sm"
-                                  />
-                                ) : (
-                                  <div className="w-10 h-10 rounded-2xl bg-white flex items-center justify-center text-gray-300 border border-gray-100">
-                                    <Users size={16} />
-                                  </div>
-                                )}
-                              </div>
-                              <div className="min-w-0">
-                                <p className="font-bold text-gray-800 text-sm truncate leading-none mb-1">
-                                  {g.name}
-                                </p>
-                                <p className="text-[10px] font-medium text-gray-400 uppercase tracking-tight truncate">
-                                  {g.designation || "Special Guest"}
-                                </p>
-                              </div>
+                            <div className="flex gap-2">
+                              <button
+                                onClick={() => editGuest(i)}
+                                className="p-1.5 rounded-lg bg-blue-50 text-blue-600 hover:bg-blue-600 hover:text-white transition-all shadow-sm"
+                                title="Edit"
+                              >
+                                <Edit size={14} />
+                              </button>
+                              <button
+                                onClick={() => removeGuest(i)}
+                                className="p-1.5 rounded-lg bg-red-50 text-red-600 hover:bg-red-600 hover:text-white transition-all shadow-sm"
+                                title="Delete"
+                              >
+                                <Trash2 size={14} />
+                              </button>
                             </div>
                           </td>
-                          <td className={`${tableCellClasses} text-right`}>
-                            <button
-                              onClick={() => removeGuest(i)}
-                              className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-full transition-all opacity-0 group-hover:opacity-100"
-                            >
-                              <Trash2 size={16} />
-                            </button>
+                          <td className={tableCellClasses}>
+                            {g.image ? (
+                              <img
+                                src={g.image}
+                                alt={g.name}
+                                className="w-8 h-8 rounded-full object-cover border-2 border-purple-100 cursor-pointer"
+                                onClick={() => setPreviewModal({ open: true, url: g.image })}
+                              />
+                            ) : (
+                              <div className="w-8 h-8 rounded-full bg-gray-100 flex items-center justify-center text-[10px] text-gray-400 font-bold uppercase">
+                                NA
+                              </div>
+                            )}
+                          </td>
+                          <td className={`${tableCellClasses} font-semibold text-gray-800`}>{g.name}</td>
+                          <td className={tableCellClasses}>
+                            <span className="px-3 py-1 bg-purple-50 text-purple-600 rounded-full text-[10px] font-bold uppercase tracking-wider">
+                              {g.designation}
+                            </span>
+                          </td>
+                          <td className={`${tableCellClasses} text-gray-600 text-sm`}>
+                            {g.contact || "NA"}
                           </td>
                         </tr>
                       ))
@@ -851,7 +1195,212 @@ const Step6VendorSponsor = ({ formData, setFormData }) => {
           </div>
         </div>
       </div>
+
+      {/* PREVIEW MODAL */}
+      {previewModal.open && (
+        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
+          <div className="relative max-w-4xl max-h-[90vh] w-full flex items-center justify-center">
+            <button
+              onClick={() => setPreviewModal({ open: false, url: "" })}
+              className="absolute -top-10 right-0 z-10 bg-red-500/80 text-white p-2 rounded-full hover:bg-red-600 transition-colors"
+            >
+              <X size={20} />
+            </button>
+
+            <img
+              src={previewModal.url}
+              alt="Preview"
+              className="max-w-full max-h-[85vh] object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD VENDOR MODAL */}
+      {showAddVendorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[1000] p-4">
+          <div className="w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="flex justify-between items-center px-8 py-6 bg-slate-50 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">Quick Add Vendor</h2>
+              <button onClick={() => setShowAddVendorModal(false)} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateVendor} className="p-8 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Vendor Type</label>
+                  <select
+                    value={newVendor.vendor_type}
+                    onChange={(e) => setNewVendor({ ...newVendor, vendor_type: e.target.value })}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.vendor_type ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm`}
+                  >
+                    <option value="">Select Type</option>
+                    <option>Suppliers</option>
+                    <option>Contractors</option>
+                    <option>Distributors</option>
+                  </select>
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Vendor Name</label>
+                  <input
+                    placeholder="Vendor Name"
+                    maxLength={30}
+                    value={newVendor.vendor_name}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "" || /^[a-zA-Z\s]*$/.test(val)) {
+                        setNewVendor({ ...newVendor, vendor_name: val });
+                        setFieldErrors({ ...fieldErrors, vendor_name: "" });
+                      }
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.vendor_name ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.vendor_name && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.vendor_name}</p>}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Company Name</label>
+                  <input
+                    placeholder="Company Name"
+                    value={newVendor.company_name}
+                    onChange={(e) => {
+                      setNewVendor({ ...newVendor, company_name: e.target.value });
+                      setFieldErrors({ ...fieldErrors, company_name: "" });
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.company_name ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.company_name && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.company_name}</p>}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Contact</label>
+                  <input
+                    placeholder="Primary Contact"
+                    maxLength={10}
+                    value={newVendor.primary_contact}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "");
+                      setNewVendor({ ...newVendor, primary_contact: val });
+                      setFieldErrors({ ...fieldErrors, primary_contact: "" });
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.primary_contact ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.primary_contact && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.primary_contact}</p>}
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Email ID</label>
+                  <input
+                    type="email"
+                    placeholder="Email ID"
+                    maxLength={50}
+                    value={newVendor.mail_id}
+                    onChange={(e) => {
+                      const val = e.target.value.toLowerCase().replace(/\s/g, "");
+                      setNewVendor({ ...newVendor, mail_id: val });
+                      setFieldErrors({ ...fieldErrors, mail_id: "" });
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.mail_id ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.mail_id && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.mail_id}</p>}
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Address</label>
+                  <textarea
+                    placeholder="Address"
+                    value={newVendor.address}
+                    onChange={(e) => setNewVendor({ ...newVendor, address: e.target.value })}
+                    className="w-full px-5 py-2.5 rounded-2xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-purple-500 text-sm h-20 resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={() => setShowAddVendorModal(false)} className="px-6 py-2 font-bold text-slate-400">Cancel</button>
+                <button disabled={loading} type="submit" className="px-8 py-2 bg-purple-600 text-white font-bold rounded-xl shadow-lg shadow-purple-100">{loading ? "Saving..." : "Save Vendor"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* QUICK ADD SPONSOR MODAL */}
+      {showAddSponsorModal && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex justify-center items-center z-[1000] p-4">
+          <div className="w-full max-w-2xl bg-white rounded-[2.5rem] shadow-2xl overflow-hidden animate-in zoom-in-95 duration-300">
+            <div className="flex justify-between items-center px-8 py-6 bg-slate-50 border-b border-slate-100">
+              <h2 className="text-xl font-bold text-slate-800">Quick Add Sponsor</h2>
+              <button onClick={() => setShowAddSponsorModal(false)} className="p-2 hover:bg-red-50 text-slate-400 hover:text-red-500 rounded-full transition-all">
+                <X size={20} />
+              </button>
+            </div>
+            <form onSubmit={handleCreateSponsor} className="p-8 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Sponsor Name</label>
+                  <input
+                    placeholder="Sponsor Name"
+                    maxLength={30}
+                    value={newSponsor.sponsor_name}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      if (val === "" || /^[a-zA-Z\s]*$/.test(val)) {
+                        setNewSponsor({ ...newSponsor, sponsor_name: val });
+                        setFieldErrors({ ...fieldErrors, sponsor_name: "" });
+                      }
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.sponsor_name ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.sponsor_name && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.sponsor_name}</p>}
+                </div>
+                <div className="space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Contact</label>
+                  <input
+                    placeholder="Contact No"
+                    maxLength={10}
+                    value={newSponsor.primary_contact}
+                    onChange={(e) => {
+                      const val = e.target.value.replace(/\D/g, "");
+                      setNewSponsor({ ...newSponsor, primary_contact: val });
+                      setFieldErrors({ ...fieldErrors, primary_contact: "" });
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.primary_contact ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.primary_contact && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.primary_contact}</p>}
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Email ID</label>
+                  <input
+                    type="email"
+                    placeholder="Email ID"
+                    maxLength={50}
+                    value={newSponsor.mail_id}
+                    onChange={(e) => {
+                      const val = e.target.value.toLowerCase().replace(/\s/g, "");
+                      setNewSponsor({ ...newSponsor, mail_id: val });
+                      setFieldErrors({ ...fieldErrors, mail_id: "" });
+                    }}
+                    className={`w-full px-5 py-2.5 rounded-2xl border ${fieldErrors.mail_id ? 'border-red-500 bg-red-50' : 'border-gray-200 bg-gray-50'} focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm font-bold`}
+                  />
+                  {fieldErrors.mail_id && <p className="text-[10px] text-red-500 ml-2 font-bold">{fieldErrors.mail_id}</p>}
+                </div>
+                <div className="col-span-2 space-y-1">
+                  <label className="text-[10px] font-bold text-slate-500 ml-2 uppercase">Address</label>
+                  <textarea
+                    placeholder="Address"
+                    value={newSponsor.address}
+                    onChange={(e) => setNewSponsor({ ...newSponsor, address: e.target.value })}
+                    className="w-full px-5 py-2.5 rounded-2xl border border-gray-200 bg-gray-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-sm h-20 resize-none"
+                  />
+                </div>
+              </div>
+              <div className="flex justify-end gap-3 pt-4">
+                <button type="button" onClick={() => setShowAddSponsorModal(false)} className="px-6 py-2 font-bold text-slate-400">Cancel</button>
+                <button disabled={loading} type="submit" className="px-8 py-2 bg-indigo-600 text-white font-bold rounded-xl shadow-lg shadow-indigo-100">{loading ? "Saving..." : "Save Sponsor"}</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
+
   );
 };
 
