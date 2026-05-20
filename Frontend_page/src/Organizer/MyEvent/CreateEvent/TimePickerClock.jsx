@@ -1,272 +1,160 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useRef, useEffect } from "react";
+import { Clock, ChevronUp, ChevronDown } from "lucide-react";
 
-import {
-  saveEventDetails,
-  saveBooking,
-  saveLayout,
-  saveDocuments,
-  saveTerms,
-  saveVendors,
-  finalSubmit,
-} from "../../../Services/api";
+const TimeDropdownPicker = ({ value, onChange }) => {
+  const [open, setOpen] = useState(false);
+  const ref = useRef();
 
-import Step1EventDetails from "./steps/Step1EventDetails";
-import Step2Booking from "./steps/Step2Booking";
-import Step3LayoutStall from "./steps/step3layout";
-import Step4Documents from "./steps/Step4Documents";
-import Step5Terms from "./steps/Step5Terms";
-import Step6VendorSponsor from "./steps/Step6VendorSponsor";
-
-const CreateEvent = ({ onBack }) => {
-  const [step, setStep] = useState(1);
-  const [popup, setPopup] = useState({
-    show: false,
-    message: "",
-  });
-  useEffect(() => {
-    if (popup.show) {
-      const timer = setTimeout(() => {
-        setPopup({ show: false, message: "" });
-      }, 2000);
-
-      return () => clearTimeout(timer); // cleanup
+  const parseTime = (timeStr) => {
+    if (!timeStr) return null;
+    const match = timeStr.match(/^(\d{2}):(\d{2})\s*(AM|PM)$/i);
+    if (match) {
+      return {
+        hour: match[1],
+        minute: match[2],
+        period: match[3].toUpperCase(),
+      };
     }
-  }, [popup.show]);
-  const validateStep = (checkAll = false) => {
-    const event = formData.eventDetails || {};
-    const booking = formData.booking || {};
-    const layout = formData.layout || {};
-    const documents = formData.documents || {};
-
-    const showError = (msg, stepNum) => {
-      setPopup({ show: true, message: msg });
-      if (checkAll && stepNum) setStep(stepNum);
-      return false;
-    };
-
-    // Step 1: Event Details
-    if (checkAll || step === 1) {
-      if (!event.eventName) return showError("Event Name is required", 1);
-      if (!event.category) return showError("Event Category is required", 1);
-      if (!event.description)
-        return showError("Event Description is required", 1);
-      if (!event.includeProgram)
-        return showError("Include Program selection is required", 1);
-      if (!event.visibility)
-        return showError("Visibility selection is required", 1);
-      if (!event.startDate) return showError("Start Date is required", 1);
-      if (!event.startTime) return showError("Start Time is required", 1);
-      if (!event.endDate) return showError("End Date is required", 1);
-      if (!event.endTime) return showError("End Time is required", 1);
-      if (!event.venue) return showError("Venue is required", 1);
-      if (!event.address) return showError("Address is required", 1);
-    }
-
-    // Step 2: Booking
-    if (checkAll || step === 2) {
-      if (!booking.bookingStartDate)
-        return showError("Booking Start Date is required", 2);
-      if (!booking.bookingEndDate)
-        return showError("Booking End Date is required", 2);
-      if (!booking.capacity) return showError("Event Capacity is required", 2);
-      if (!booking.passType) return showError("Pass Type is required", 2);
-      if (!booking.entryType) return showError("Entry Type is required", 2);
-      if (!booking.chargeType) return showError("Charge Type is required", 2);
-    }
-
-    // Step 3: Layout & Stall
-    if (checkAll || step === 3) {
-      if (!layout.stalls || layout.stalls.length === 0) {
-        return showError("At least one stall must be added", 3);
-      }
-    }
-
-    // Step 4: Documents
-    if (checkAll || step === 4) {
-      if (!documents.banner) return showError("Event Banner is required", 4);
-      if (!documents.docs || documents.docs.length === 0)
-        return showError("At least one document is required", 4);
-    }
-
-    // Step 5: Terms
-    if (checkAll || step === 5) {
-      if (!formData.terms || formData.terms.length === 0)
-        return showError("Terms must be added", 5);
-    }
-
-    // Step 6: Vendor/Sponsor
-    if (checkAll || step === 6) {
-      const {
-        vendors = [],
-        sponsors = [],
-        guests = [],
-      } = formData.vendors || {};
-      if (
-        vendors.length === 0 &&
-        sponsors.length === 0 &&
-        guests.length === 0
-      ) {
-        return showError(
-          "At least one Vendor, Sponsor or Guest is required",
-          6,
-        );
-      }
-    }
-
-    return true;
+    return null;
   };
 
-  const [formData, setFormData] = useState({
-    eventDetails: {},
-    booking: {},
-    layout: { stalls: [] },
-    documents: {
-      banner: null,
-      docs: [],
-    },
-    terms: [],
-    vendors: { vendors: [], sponsors: [], guests: [] },
-  });
-
-  const handleSubmit = async () => {
-    if (!validateStep(true)) return; // Check all steps before submission
-
-    try {
-      // STEP 1
-      const res = await saveEventDetails(formData.eventDetails);
-      const event_id = res.event_id;
-      console.log("Event ID:", event_id);
-
-      // STEP 2–6
-      await saveBooking({ ...formData.booking, event_id });
-      await saveLayout({ ...formData.layout, event_id });
-
-      // 🔥 FILE UPLOAD
-      const fd = new FormData();
-
-      fd.append("event_id", event_id);
-
-      // Banner
-      if (formData.documents.banner) {
-        fd.append("banner", formData.documents.banner);
-      }
-
-      // Documents
-      formData.documents.docs.forEach((doc, index) => {
-        fd.append(`docs_${index}`, doc.file);
-        fd.append(`doc_type_${index}`, doc.type);
-        fd.append(`doc_number_${index}`, doc.number);
-      });
-
-      fd.append("doc_count", formData.documents.docs.length);
-      console.log("FormData entries:", fd.entries());
-      await saveDocuments(fd); // 🔥 send FormData
-
-      await saveTerms({ terms: formData.terms, event_id });
-      await saveVendors({ ...formData.vendors, event_id });
-
-      // FINAL
-      await finalSubmit({ event_id });
-
-      alert("Event Created Successfully");
-    } catch (err) {
-      console.error(err);
-      alert("Error");
+  const getInitialTime = () => {
+    if (value) {
+      const parsed = parseTime(value);
+      if (parsed) return parsed;
     }
+    const now = new Date();
+    let hrs = now.getHours();
+    const mins = now.getMinutes();
+    const prd = hrs >= 12 ? "PM" : "AM";
+    hrs = hrs % 12;
+    hrs = hrs ? hrs : 12;
+    return {
+      hour: hrs.toString().padStart(2, "0"),
+      minute: mins.toString().padStart(2, "0"),
+      period: prd,
+    };
+  };
+
+  const initial = getInitialTime();
+  const [hour, setHour] = useState(initial.hour);
+  const [minute, setMinute] = useState(initial.minute);
+  const [period, setPeriod] = useState(initial.period);
+
+  // Close on outside click
+  useEffect(() => {
+    const handleClickOutside = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) {
+        setOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
+  }, []);
+
+  // Sync internal state when value prop changes from parent
+  useEffect(() => {
+    if (value) {
+      const parsed = parseTime(value);
+      if (parsed) {
+        setHour(parsed.hour);
+        setMinute(parsed.minute);
+        setPeriod(parsed.period);
+      }
+    }
+  }, [value]);
+
+  // Update parent only when values change and it doesn't match the current value
+  useEffect(() => {
+    if (value) {
+      const formatted = `${hour}:${minute} ${period}`;
+      if (formatted !== value) {
+        onChange(formatted);
+      }
+    }
+  }, [hour, minute, period, value, onChange]);
+
+  const handleOpenToggle = () => {
+    const nextOpen = !open;
+    setOpen(nextOpen);
+    if (nextOpen && !value) {
+      onChange(`${hour}:${minute} ${period}`);
+    }
+  };
+
+  const inc = (val, setter, max, min = 1) => {
+    let num = parseInt(val);
+    num = num >= max ? min : num + 1;
+    setter(num.toString().padStart(2, "0"));
+  };
+
+  const dec = (val, setter, max, min = 1) => {
+    let num = parseInt(val);
+    num = num <= min ? max : num - 1;
+    setter(num.toString().padStart(2, "0"));
   };
 
   return (
-    <div className="p-2 bg-white rounded shadow">
-      <h1 className="text-2xl font-bold mb-6">Create Event</h1>
-
-      <div className="flex gap-6 border-b pb-2 mb-6 text-sm">
-        <span className={step === 1 ? "font-bold text-indigo-600" : ""}>
-          Event Details
+    <div className="relative w-full" ref={ref}>
+      
+      {/* INPUT BOX */}
+      <div
+        onClick={handleOpenToggle}
+        className="w-full bg-gray-50 ring-1 ring-gray-200 p-2.5 rounded-xl cursor-pointer flex items-center justify-between text-sm transition-all hover:ring-indigo-300"
+      >
+        <span className={value ? "text-gray-700 font-medium" : "text-gray-400"}>
+          {value || "HH:MM"}
         </span>
-        <span className={step === 2 ? "font-bold text-indigo-600" : ""}>
-          Booking
-        </span>
-        <span className={step === 3 ? "font-bold text-indigo-600" : ""}>
-          Layout & Stall
-        </span>
-        <span className={step === 4 ? "font-bold text-indigo-600" : ""}>
-          Documents
-        </span>
-        <span className={step === 5 ? "font-bold text-indigo-600" : ""}>
-          Terms
-        </span>
-        <span className={step === 6 ? "font-bold text-indigo-600" : ""}>
-          Vendor
-        </span>
+        <Clock className="w-4 h-4 text-gray-400" />
       </div>
 
-      {step === 1 && (
-        <Step1EventDetails formData={formData} setFormData={setFormData} />
-      )}
+      {/* DROPDOWN PICKER */}
+      {open && (
+        <div className="absolute z-50 mt-1 bg-white border border-gray-200 rounded-xl shadow-xl py-2 w-[140px] left-1/2 -translate-x-1/2 flex items-center justify-center">
 
-      {step === 2 && (
-        <Step2Booking formData={formData} setFormData={setFormData} />
-      )}
+          <div className="flex items-center gap-2 text-slate-500">
+            
+            {/* HOUR */}
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={() => inc(hour, setHour, 12)} className="hover:text-blue-600 transition-colors p-0.5">
+                <ChevronUp size={18} strokeWidth={2.5} />
+              </button>
+              <span className="text-sm font-medium text-blue-800 w-5 text-center">{hour}</span>
+              <button onClick={() => dec(hour, setHour, 12)} className="hover:text-blue-600 transition-colors p-0.5">
+                <ChevronDown size={18} strokeWidth={2.5} />
+              </button>
+            </div>
 
-      {step === 3 && (
-        <Step3LayoutStall formData={formData} setFormData={setFormData} />
-      )}
+            <span className="text-blue-800 font-medium mb-1 text-sm">:</span>
 
-      {step === 4 && (
-        <Step4Documents formData={formData} setFormData={setFormData} />
-      )}
+            {/* MINUTE */}
+            <div className="flex flex-col items-center gap-0.5">
+              <button onClick={() => inc(minute, setMinute, 59, 0)} className="hover:text-blue-600 transition-colors p-0.5">
+                <ChevronUp size={18} strokeWidth={2.5} />
+              </button>
+              <span className="text-sm font-medium text-blue-800 w-5 text-center">{minute}</span>
+              <button onClick={() => dec(minute, setMinute, 59, 0)} className="hover:text-blue-600 transition-colors p-0.5">
+                <ChevronDown size={18} strokeWidth={2.5} />
+              </button>
+            </div>
 
-      {step === 5 && (
-        <Step5Terms formData={formData} setFormData={setFormData} />
-      )}
+            {/* PERIOD */}
+            <div className="flex flex-col items-center gap-0.5 ml-1">
+              <button onClick={() => setPeriod(period === "AM" ? "PM" : "AM")} className="hover:text-blue-600 transition-colors p-0.5">
+                <ChevronUp size={18} strokeWidth={2.5} />
+              </button>
+              <span className="text-sm font-medium text-blue-800 w-5 text-center">{period}</span>
+              <button onClick={() => setPeriod(period === "AM" ? "PM" : "AM")} className="hover:text-blue-600 transition-colors p-0.5">
+                <ChevronDown size={18} strokeWidth={2.5} />
+              </button>
+            </div>
 
-      {step === 6 && (
-        <Step6VendorSponsor formData={formData} setFormData={setFormData} />
-      )}
-
-      <div className="flex justify-between mt-10">
-        <button
-          onClick={() => (step === 1 ? onBack() : setStep(step - 1))}
-          className="border px-4 py-2 rounded"
-        >
-          Back
-        </button>
-
-        {step < 6 ? (
-          <button
-            onClick={() => {
-              if (!validateStep()) return;
-              setStep(step + 1);
-            }}
-            className="bg-indigo-600 text-white px-6 py-2 rounded"
-          >
-            Next
-          </button>
-        ) : (
-          <button
-            onClick={handleSubmit}
-            className="bg-green-600 text-white px-6 py-2 rounded"
-          >
-            Submit
-          </button>
-        )}
-      </div>
-      {popup.show && (
-        <div className="fixed top-16 right-6 z-50">
-          <div className="bg-red-500 text-white px-6 py-4 rounded-lg shadow-lg flex items-center gap-4 animate-slideIn">
-            <span className="font-semibold">{popup.message}</span>
-
-            <button
-              onClick={() => setPopup({ show: false, message: "" })}
-              className="text-white font-bold"
-            >
-              ✕
-            </button>
           </div>
+
         </div>
       )}
     </div>
   );
 };
 
-export default CreateEvent;
+export default TimeDropdownPicker;
