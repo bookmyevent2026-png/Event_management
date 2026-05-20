@@ -1,7 +1,8 @@
 import React, { useEffect, useState, useRef } from "react";
-import CustomTimePicker from "../CustomTimePicker";
+import CustomTimePicker from "../TimePickerClock";
 import { get_Venues_details } from "../../../../Services/api";
-import { Calendar, Clock } from "lucide-react";
+// import { Calendar, Clock } from "lucide-react";
+import { Calendar, Clock, Search } from "lucide-react";
 const Step1EventDetails = ({ formData, setFormData }) => {
   const [venues, setVenues] = useState([]);
   /* inside component */
@@ -19,12 +20,8 @@ const Step1EventDetails = ({ formData, setFormData }) => {
       return "Event Name is required";
     }
 
-    if (!/^[A-Za-z\s]+$/.test(value)) {
-      return "Only letters and spaces allowed";
-    }
-
-    if (value.length > 20) {
-      return "Max 20 characters allowed";
+    if (value.length > 50) {
+      return "Max 50 characters allowed";
     }
 
     return "";
@@ -74,6 +71,28 @@ const Step1EventDetails = ({ formData, setFormData }) => {
       }));
       return;
     }
+    if (name === "vehiclePass" && !checked) {
+      setFormData((prev) => ({
+        ...prev,
+        eventDetails: {
+          ...prev.eventDetails,
+          vehiclePass: false,
+          vehicleNumber: false,
+        },
+      }));
+      return;
+    }
+    if (name === "isInternationalInclude" && !checked) {
+      setFormData((prev) => ({
+        ...prev,
+        eventDetails: {
+          ...prev.eventDetails,
+          isInternationalInclude: false,
+          passport: false,
+        },
+      }));
+      return;
+    }
     setFormData((prev) => ({
       ...prev,
       eventDetails: {
@@ -95,22 +114,112 @@ const Step1EventDetails = ({ formData, setFormData }) => {
         </div>
 
         <div className="space-y-4">
-          <div className="group">
-            <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
+          <div className="group pt-2">
+            <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
               Event Category <span className="text-red-500">*</span>
             </label>
-            <select
-              name="category"
-              value={formData.eventDetails?.category || ""}
-              onChange={handleChange}
-              className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all outline-none appearance-none cursor-pointer text-gray-600"
-            >
-              <option value="">Select Category</option>
-              <option>Music</option>
-              <option>Business</option>
-              <option>Technology</option>
-              <option>Education</option>
-            </select>
+
+            <div className="relative">
+              {/* Main Select Box */}
+              <div
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    eventDetails: {
+                      ...prev.eventDetails,
+                      showCategoryDropdown: !prev.eventDetails?.showCategoryDropdown,
+                    },
+                  }))
+                }
+                className="w-full bg-gray-50 ring-1 ring-gray-200 p-3 rounded-xl cursor-pointer flex items-center justify-between"
+              >
+                <span
+                  className={
+                    formData.eventDetails?.category
+                      ? "text-gray-700"
+                      : "text-gray-400"
+                  }
+                >
+                  {formData.eventDetails?.category || "Event Category"}
+                </span>
+              </div>
+
+              {/* Dropdown */}
+              {formData.eventDetails?.showCategoryDropdown && (
+                <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+
+                  {/* Search Bar INSIDE Dropdown */}
+                  <div className="p-3 border-b border-gray-100">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search Category"
+                        value={formData.eventDetails?.categorySearch || ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+                          setFormData((prev) => ({
+                            ...prev,
+                            eventDetails: {
+                              ...prev.eventDetails,
+                              categorySearch: value,
+                            },
+                          }));
+                        }}
+                        className="w-full bg-gray-50 ring-1 ring-gray-200 p-2.5 pr-10 rounded-lg outline-none focus:ring-2 focus:ring-indigo-500 text-sm"
+                      />
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    </div>
+                  </div>
+
+                  {/* Category List */}
+                  <div className="max-h-60 overflow-y-auto">
+                    {["Music", "Business", "Technology", "Education", "Sports"]
+                      .filter((cat) =>
+                        cat
+                          .toLowerCase()
+                          .includes(
+                            (
+                              formData.eventDetails?.categorySearch || ""
+                            ).toLowerCase()
+                          )
+                      )
+                      .map((cat) => (
+                        <div
+                          key={cat}
+                          onClick={() => {
+                            setFormData((prev) => ({
+                              ...prev,
+                              eventDetails: {
+                                ...prev.eventDetails,
+                                category: cat,
+                                showCategoryDropdown: false,
+                                categorySearch: "",
+                              },
+                            }));
+                          }}
+                          className="px-4 py-3 hover:bg-indigo-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-b-0"
+                        >
+                          {cat}
+                        </div>
+                      ))}
+
+                    {["Music", "Business", "Technology", "Education"].filter((cat) =>
+                      cat
+                        .toLowerCase()
+                        .includes(
+                          (
+                            formData.eventDetails?.categorySearch || ""
+                          ).toLowerCase()
+                        )
+                    ).length === 0 && (
+                        <div className="px-4 py-3 text-sm text-gray-400">
+                          No categories found
+                        </div>
+                      )}
+                  </div>
+                </div>
+              )}
+            </div>
           </div>
 
           <div className="group">
@@ -119,7 +228,7 @@ const Step1EventDetails = ({ formData, setFormData }) => {
             </label>
             <input
               name="eventName"
-              placeholder="Enter a catchy name"
+              placeholder="Event Title"
               value={formData.eventDetails?.eventName || ""}
               onChange={(e) => {
                 const value = e.target.value;
@@ -142,11 +251,11 @@ const Step1EventDetails = ({ formData, setFormData }) => {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
-              About Event <span className="text-red-500">*</span>
+              Event Description <span className="text-red-500">*</span>
             </label>
             <textarea
               name="description"
-              placeholder="Tell us what makes it special..."
+              placeholder="Event Description"
               value={formData.eventDetails?.description || ""}
               onChange={handleChange}
               maxLength={200}
@@ -157,11 +266,11 @@ const Step1EventDetails = ({ formData, setFormData }) => {
 
           <div>
             <label className="block text-sm font-semibold text-gray-700 mb-1.5 ml-1">
-              Amenities
+              Event Amenities Description
             </label>
             <textarea
               name="amenities"
-              placeholder="What will guests enjoy?"
+              placeholder="Event Amenities Description"
               value={formData.eventDetails?.amenities || ""}
               onChange={handleChange}
               maxLength={100}
@@ -176,7 +285,7 @@ const Step1EventDetails = ({ formData, setFormData }) => {
             </label>
             <input
               name="tags"
-              placeholder="e.g. #music, #festival"
+              placeholder="Add tags about your event"
               value={formData.eventDetails?.tags || ""}
               onChange={handleChange}
               className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-indigo-500 transition-all outline-none"
@@ -299,60 +408,101 @@ const Step1EventDetails = ({ formData, setFormData }) => {
             </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4 pt-2">
-            <label className="flex items-center p-3 rounded-xl bg-indigo-50/50 ring-1 ring-indigo-100 cursor-pointer hover:bg-indigo-50 transition-all">
-              <input
-                type="checkbox"
-                name="dayPass"
-                checked={formData.eventDetails?.dayPass || false}
-                onChange={handleChange}
-                className="w-4 h-4 rounded text-indigo-600 border-indigo-300 focus:ring-indigo-500"
-              />
-              <span className="ml-3 text-sm font-semibold text-gray-600">
-                Day Pass
-              </span>
-            </label>
-            <label className="flex items-center p-3 rounded-xl bg-purple-50/50 ring-1 ring-purple-100 cursor-pointer hover:bg-purple-50 transition-all">
-              <input
-                type="checkbox"
-                name="isInternationalInclude"
-                checked={formData.eventDetails?.isInternationalInclude || false}
-                onChange={handleChange}
-                className="w-4 h-4 rounded text-purple-600 border-purple-300 focus:ring-purple-500"
-              />
-              <span className="ml-3 text-sm font-semibold text-gray-600">
-                International
-              </span>
-            </label>
-          </div>
-
-          <div className="space-y-3">
+          <div className="space-y-3 pt-2">
             <label className="block text-sm font-semibold text-gray-700 ml-1">
-              Mandatory Documents
+              Pass Validity and Include International
             </label>
-            <div className="space-y-2">
-              <label className="flex items-center p-3 rounded-xl bg-gray-50 ring-1 ring-gray-200 cursor-pointer hover:bg-gray-100 transition-all">
+            <div className="grid grid-cols-2 gap-4">
+              <label className="flex items-center p-3 rounded-xl bg-indigo-50/50 ring-1 ring-indigo-100 cursor-pointer hover:bg-indigo-50 transition-all">
                 <input
                   type="checkbox"
-                  name="aadhar"
-                  checked={formData.eventDetails?.aadhar || false}
+                  name="dayPass"
+                  checked={formData.eventDetails?.dayPass || false}
                   onChange={handleChange}
-                  className="w-4 h-4 rounded text-indigo-600"
+                  className="w-4 h-4 rounded text-indigo-600 border-indigo-300 focus:ring-indigo-500"
                 />
-                <span className="ml-3 text-sm font-semibold text-gray-600">Aadhar Card</span>
+                <span className="ml-3 text-sm font-semibold text-gray-600">
+                  Day Pass
+                </span>
               </label>
-              {formData.eventDetails?.isInternationalInclude && (
-                <label className="flex items-center p-3 rounded-xl bg-gray-50 ring-1 ring-gray-200 cursor-pointer hover:bg-gray-100 transition-all animate-fadeIn">
+              <label className="flex items-center p-3 rounded-xl bg-purple-50/50 ring-1 ring-purple-100 cursor-pointer hover:bg-purple-50 transition-all">
+                <input
+                  type="checkbox"
+                  name="isInternationalInclude"
+                  checked={formData.eventDetails?.isInternationalInclude || false}
+                  onChange={handleChange}
+                  className="w-4 h-4 rounded text-purple-600 border-purple-300 focus:ring-purple-500"
+                />
+                <span className="ml-3 text-sm font-semibold text-gray-600">
+                  International
+                </span>
+              </label>
+            </div>
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            {/* Mandatory Documents (LEFT) */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-gray-700 ml-1">
+                Mandatory Documents
+              </label>
+              <div className="space-y-2">
+                <label className="flex items-center p-3 rounded-xl bg-gray-50 ring-1 ring-gray-200 cursor-pointer hover:bg-gray-100 transition-all">
                   <input
                     type="checkbox"
-                    name="passport"
-                    checked={formData.eventDetails?.passport || false}
+                    name="aadhar"
+                    checked={formData.eventDetails?.aadhar || false}
                     onChange={handleChange}
                     className="w-4 h-4 rounded text-indigo-600"
                   />
-                  <span className="ml-3 text-sm text-gray-600">Passport</span>
+                  <span className="ml-3 text-sm font-semibold text-gray-600">Aadhar Card</span>
                 </label>
-              )}
+                {formData.eventDetails?.isInternationalInclude && (
+                  <label className="flex items-center p-3 rounded-xl bg-gray-50 ring-1 ring-gray-200 cursor-pointer hover:bg-gray-100 transition-all animate-fadeIn">
+                    <input
+                      type="checkbox"
+                      name="passport"
+                      checked={formData.eventDetails?.passport || false}
+                      onChange={handleChange}
+                      className="w-4 h-4 rounded text-indigo-600"
+                    />
+                    <span className="ml-3 text-sm text-gray-600">Passport</span>
+                  </label>
+                )}
+                {formData.eventDetails?.vehiclePass && (
+                  <label className="flex items-center p-3 rounded-xl bg-gray-50 ring-1 ring-gray-200 cursor-pointer hover:bg-gray-100 transition-all animate-fadeIn">
+                    <input
+                      type="checkbox"
+                      name="vehicleNumber"
+                      checked={formData.eventDetails?.vehicleNumber || false}
+                      onChange={handleChange}
+                      className="w-4 h-4 rounded text-indigo-600"
+                    />
+                    <span className="ml-3 text-sm text-gray-600">Vehicle Number</span>
+                  </label>
+                )}
+              </div>
+            </div>
+
+            {/* Vehicle Pass (RIGHT) */}
+            <div className="space-y-3">
+              <label className="block text-sm font-semibold text-gray-700 ml-1">
+                Vehicle Pass
+              </label>
+              <div>
+                <label className="flex items-center p-3 rounded-xl bg-emerald-50/50 ring-1 ring-emerald-100 cursor-pointer hover:bg-emerald-50 transition-all">
+                  <input
+                    type="checkbox"
+                    name="vehiclePass"
+                    checked={formData.eventDetails?.vehiclePass || false}
+                    onChange={handleChange}
+                    className="w-4 h-4 rounded text-emerald-600 border-emerald-300 focus:ring-emerald-500"
+                  />
+                  <span className="ml-3 text-sm font-semibold text-gray-600">
+                    Is Vehicle Pass Include
+                  </span>
+                </label>
+              </div>
             </div>
           </div>
 
@@ -412,14 +562,13 @@ const Step1EventDetails = ({ formData, setFormData }) => {
           </div>
           <h3 className="text-xl font-bold text-gray-800">Time & Place</h3>
         </div>
-
-        <div className="space-y-5">
-          <div className="flex bg-gray-50 p-1 rounded-xl ring-1 ring-gray-200">
+        <div className="space-y-1">
+          <div className="flex bg-gray-50 p-1 rounded-2xl ring-1 ring-gray-200 gap-1">
             {[
               { id: "OneTime", label: "One-Time" },
               { id: "Recurring", label: "Recurring" },
             ].map((opt) => (
-              <label key={opt.id} className="flex-1">
+              <label key={opt.id} className="flex-1 cursor-pointer">
                 <input
                   type="radio"
                   name="eventType"
@@ -428,7 +577,8 @@ const Step1EventDetails = ({ formData, setFormData }) => {
                   checked={formData.eventDetails?.eventType === opt.id}
                   onChange={handleChange}
                 />
-                <div className="text-center py-2.5 rounded-lg cursor-pointer transition-all peer-checked:bg-white peer-checked:text-emerald-600 peer-checked:shadow-sm text-gray-500 text-sm font-semibold">
+
+                <div className="rounded-xl py-2.5 text-center text-xs font-semibold transition-all duration-300 bg-transparent text-gray-500 peer-checked:bg-white peer-checked:text-indigo-700 peer-checked:ring-2 peer-checked:ring-indigo-500 peer-checked:shadow-sm hover:bg-white/70">
                   {opt.label}
                 </div>
               </label>
@@ -437,7 +587,7 @@ const Step1EventDetails = ({ formData, setFormData }) => {
 
           <div className="grid grid-cols-2 gap-4">
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
                 Start Date
               </label>
               <input
@@ -451,19 +601,25 @@ const Step1EventDetails = ({ formData, setFormData }) => {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
                 Start Time
               </label>
-              <input
-                type="time"
-                name="startTime"
+
+              <CustomTimePicker
                 value={formData.eventDetails?.startTime || ""}
-                onChange={handleChange}
-                className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                onChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    eventDetails: {
+                      ...prev.eventDetails,
+                      startTime: value,
+                    },
+                  }))
+                }
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
                 End Date
               </label>
               <input
@@ -477,15 +633,21 @@ const Step1EventDetails = ({ formData, setFormData }) => {
               />
             </div>
             <div className="space-y-1.5">
-              <label className="text-xs font-bold text-gray-500 uppercase tracking-wider ml-1">
+              <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
                 End Time
               </label>
-              <input
-                type="time"
-                name="endTime"
+
+              <CustomTimePicker
                 value={formData.eventDetails?.endTime || ""}
-                onChange={handleChange}
-                className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 p-2.5 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none text-sm"
+                onChange={(value) =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    eventDetails: {
+                      ...prev.eventDetails,
+                      endTime: value,
+                    },
+                  }))
+                }
               />
             </div>
           </div>
@@ -504,6 +666,7 @@ const Step1EventDetails = ({ formData, setFormData }) => {
                 <option value="">Select Frequency</option>
                 <option value="Daily">Daily</option>
                 <option value="Weekly">Weekly</option>
+                <option value="Monthly">Monthly</option>
                 <option value="Yearly">Yearly</option>
               </select>
             </div>
@@ -513,27 +676,139 @@ const Step1EventDetails = ({ formData, setFormData }) => {
             <label className="block text-sm font-semibold text-gray-700 mb-2 ml-1">
               Location Venue <span className="text-red-500">*</span>
             </label>
-            <select
-              name="venue"
-              value={formData.eventDetails?.venue || ""}
-              onChange={handleChange}
-              className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none appearance-none cursor-pointer mb-3"
-            >
-              <option value="">Search Venue</option>
-              {venues.map((venue) => (
-                <option key={venue.id} value={venue.venue_name}>
-                  {venue.venue_name} ({venue.city_name})
-                </option>
-              ))}
-            </select>
+
+            <div className="relative">
+              {/* Main Select Box */}
+              <div
+                onClick={() =>
+                  setFormData((prev) => ({
+                    ...prev,
+                    eventDetails: {
+                      ...prev.eventDetails,
+                      showVenueDropdown:
+                        !prev.eventDetails?.showVenueDropdown,
+                    },
+                  }))
+                }
+                className="w-full bg-gray-50 ring-1 ring-gray-200 p-3 rounded-xl cursor-pointer flex items-center justify-between"
+              >
+                <span
+                  className={
+                    formData.eventDetails?.venue
+                      ? "text-gray-700"
+                      : "text-gray-400"
+                  }
+                >
+                  {formData.eventDetails?.venue || "Venue name"}
+                </span>
+              </div>
+
+              {/* Dropdown */}
+              {formData.eventDetails?.showVenueDropdown && (
+                <div className="absolute z-20 w-full mt-2 bg-white border border-gray-200 rounded-xl shadow-lg overflow-hidden">
+
+                  {/* Search Bar INSIDE Dropdown */}
+                  <div className="p-3 border-b border-gray-100">
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Search Venue"
+                        value={formData.eventDetails?.venueSearch || ""}
+                        onChange={(e) => {
+                          const value = e.target.value;
+
+                          setFormData((prev) => ({
+                            ...prev,
+                            eventDetails: {
+                              ...prev.eventDetails,
+                              venueSearch: value,
+                            },
+                          }));
+                        }}
+                        className="w-full bg-gray-50 ring-1 ring-gray-200 p-2.5 pr-10 rounded-lg outline-none focus:ring-2 focus:ring-emerald-500 text-sm"
+                      />
+
+                      <Search className="absolute right-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                    </div>
+                  </div>
+
+                  {/* Venue List */}
+                  <div className="max-h-60 overflow-y-auto">
+                    {venues
+                      .filter((venue) =>
+                        `${venue.venue_name} ${venue.city_name}`
+                          .toLowerCase()
+                          .includes(
+                            (
+                              formData.eventDetails?.venueSearch || ""
+                            ).toLowerCase()
+                          )
+                      )
+                      .map((venue) => (
+                        <div
+                          key={venue.id}
+                          onClick={() => {
+                            const fullAddress = [venue.address, venue.city_name, venue.state_name, venue.country_name, venue.pin_code]
+                              .filter(Boolean)
+                              .join(", ");
+                            setFormData((prev) => ({
+                              ...prev,
+                              eventDetails: {
+                                ...prev.eventDetails,
+                                venue: `${venue.venue_name} (${venue.city_name})`,
+                                address: fullAddress,
+                                showVenueDropdown: false,
+                                venueSearch: "",
+                              },
+                            }));
+                          }}
+                          className="px-4 py-3 hover:bg-emerald-50 cursor-pointer text-sm text-gray-700 border-b border-gray-100 last:border-b-0"
+                        >
+                          {venue.venue_name} ({venue.city_name})
+                        </div>
+                      ))}
+
+                    {venues.filter((venue) =>
+                      `${venue.venue_name} ${venue.city_name}`
+                        .toLowerCase()
+                        .includes(
+                          (
+                            formData.eventDetails?.venueSearch || ""
+                          ).toLowerCase()
+                        )
+                    ).length === 0 && (
+                        <div className="px-4 py-3 text-sm text-gray-400">
+                          No venues found
+                        </div>
+                      )}
+                  </div>
+                </div>
+              )}
+            </div>
+
             <textarea
               name="address"
               placeholder="Detailed Address"
               value={formData.eventDetails?.address || ""}
               onChange={handleChange}
               rows="2"
-              className="w-full bg-gray-50 border-0 ring-1 ring-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none text-sm"
+              className="w-full mt-3 bg-gray-50 border-0 ring-1 ring-gray-200 p-3 rounded-xl focus:ring-2 focus:ring-emerald-500 outline-none resize-none text-sm"
             />
+
+            {formData.eventDetails?.address && (
+              <div className="mt-4 rounded-xl overflow-hidden ring-1 ring-gray-200 h-48 w-full relative">
+                <iframe
+                  width="100%"
+                  height="100%"
+                  frameBorder="0"
+                  style={{ border: 0 }}
+                  src={`https://maps.google.com/maps?q=${encodeURIComponent(
+                    formData.eventDetails.address
+                  )}&t=&z=13&ie=UTF8&iwloc=&output=embed`}
+                  allowFullScreen
+                ></iframe>
+              </div>
+            )}
           </div>
         </div>
       </div>
