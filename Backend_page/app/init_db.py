@@ -55,6 +55,8 @@ def create_tables():
 
         welcome_kit BOOLEAN DEFAULT FALSE,
         food BOOLEAN DEFAULT FALSE,
+        vehicle_pass BOOLEAN DEFAULT FALSE,
+        vehicle_number BOOLEAN DEFAULT FALSE,
 
         event_type VARCHAR(50),
         occurrence VARCHAR(50),
@@ -166,8 +168,13 @@ def create_tables():
         country_name  VARCHAR(30),
         state_name  VARCHAR(30),
         city_name  VARCHAR(30),
+        pin_code VARCHAR(10),
         venue_image LONGTEXT,
-        status VARCHAR(20)
+        status VARCHAR(20),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        created_by VARCHAR(150),
+        modified_by VARCHAR(150),
+        modified_on TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
     )
     """
 
@@ -200,7 +207,9 @@ def create_tables():
         venue_id INT,
         document_type VARCHAR(100),
         document_number VARCHAR(100),
-        document_file LONGTEXT
+        document_file LONGTEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE CASCADE
     )
     """
     vendor_details="""
@@ -212,13 +221,20 @@ def create_tables():
     primary_contact VARCHAR(20),
     secondary_contact VARCHAR(20),
     mail_id VARCHAR(150),
+    country VARCHAR(100),
+    state VARCHAR(100),
+    city VARCHAR(100),
     address TEXT,
     bank_name VARCHAR(150),
     account_holder VARCHAR(150),
     ifsc_code VARCHAR(50),
     account_number VARCHAR(50),
+    bank_passbook LONGTEXT,
     status VARCHAR(20) DEFAULT 'Active',
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(150),
+    modified_by VARCHAR(150),
+    modified_on TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );
     """
     Vendor_Document="""
@@ -232,7 +248,7 @@ def create_tables():
     FOREIGN KEY (vendor_id) REFERENCES vendor_details(id) ON DELETE CASCADE
 );
     """
-    policy_table="""CREATE TABLE IF NOT EXISTS  policies (
+    policy_table="""CREATE TABLE IF NOT EXISTS policies (
     id INT AUTO_INCREMENT PRIMARY KEY,
     policy_code VARCHAR(50),
     policy_name VARCHAR(255),
@@ -240,7 +256,11 @@ def create_tables():
     policy_group VARCHAR(100),
     description TEXT,
     organizer_id INT,
-    status VARCHAR(20) DEFAULT 'Active'
+    status VARCHAR(20) DEFAULT 'Active',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(150),
+    modified_by VARCHAR(150),
+    modified_on TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP
 );"""
 
     event_layout="""
@@ -314,6 +334,7 @@ def create_tables():
     policy_group VARCHAR(100),
     policy_type VARCHAR(100),
     policy_name VARCHAR(255),
+    is_default BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     CONSTRAINT fk_event_terms_event
     FOREIGN KEY (event_id)
@@ -484,22 +505,24 @@ def create_tables():
 
     def alter_policies_table(cursor):
         try:
-            # Check column exists
-            cursor.execute("""
-                SELECT COLUMN_NAME 
-                FROM INFORMATION_SCHEMA.COLUMNS 
-                WHERE TABLE_NAME = 'policies' 
-                AND COLUMN_NAME = 'file_path'
-                AND TABLE_SCHEMA = DATABASE()
-            """)
-            column = cursor.fetchone()
-
-            if not column:
+            # Existing alterations
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'policies' AND COLUMN_NAME = 'file_path' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
                 cursor.execute("ALTER TABLE policies ADD COLUMN file_path TEXT;")
-                print("file_path column added to policies table")
-            else:
-                print("file_path already exists")
+                print("file_path added to policies")
 
+            # Check for audit columns
+            audit_cols = [
+                ("created_by", "VARCHAR(150)"),
+                ("modified_by", "VARCHAR(150)"),
+                ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                ("modified_on", "TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP")
+            ]
+            for col, col_type in audit_cols:
+                cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'policies' AND COLUMN_NAME = %s AND TABLE_SCHEMA = DATABASE()", (col,))
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE policies ADD COLUMN {col} {col_type};")
+                    print(f"Added {col} to policies")
         except Exception as e:
             print("Alter error:", str(e))
 
@@ -517,13 +540,149 @@ def create_tables():
             if not column:
                 cursor.execute("ALTER TABLE event_details_table ADD COLUMN user_id INT;")
                 print("user_id column added to event_details_table table")
-            else:
-                print("user_id already exists")
+            
+            # Add vehicle_pass column if missing
+            cursor.execute("""
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'event_details_table' 
+                AND COLUMN_NAME = 'vehicle_pass'
+                AND TABLE_SCHEMA = DATABASE()
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE event_details_table ADD COLUMN vehicle_pass BOOLEAN DEFAULT FALSE;")
+                print("vehicle_pass column added to event_details_table table")
+
+            # Add vehicle_number column if missing
+            cursor.execute("""
+                SELECT COLUMN_NAME 
+                FROM INFORMATION_SCHEMA.COLUMNS 
+                WHERE TABLE_NAME = 'event_details_table' 
+                AND COLUMN_NAME = 'vehicle_number'
+                AND TABLE_SCHEMA = DATABASE()
+            """)
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE event_details_table ADD COLUMN vehicle_number BOOLEAN DEFAULT FALSE;")
+                print("vehicle_number column added to event_details_table table")
 
         except Exception as e:
             print("Alter event error:", str(e))
 
+    def alter_venues_table_organizer(cursor):
+        try:
+            # Check for organizer_id
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'venues' AND COLUMN_NAME = 'organizer_id' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE venues ADD COLUMN organizer_id INT;")
+                print("Added organizer_id to venues")
+
+            # Check for audit columns
+            audit_cols = [
+                ("created_by", "VARCHAR(150)"),
+                ("modified_by", "VARCHAR(150)"),
+                ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                ("modified_on", "TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP")
+            ]
+            for col, col_type in audit_cols:
+                cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'venues' AND COLUMN_NAME = %s AND TABLE_SCHEMA = DATABASE()", (col,))
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE venues ADD COLUMN {col} {col_type};")
+                    print(f"Added {col} to venues")
+        except Exception as e:
+            print("Alter venues error:", e)
+
+    def alter_venues_table_pincode(cursor):
+        try:
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'venues' AND COLUMN_NAME = 'pin_code' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE venues ADD COLUMN pin_code VARCHAR(10);")
+                print("Added pin_code to venues")
+        except Exception as e:
+            print("Alter venues pincode error:", e)
+
+    def alter_vendor_table_organizer(cursor):
+        try:
+            # Check for organizer_id
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'vendor_details' AND COLUMN_NAME = 'organizer_id' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE vendor_details ADD COLUMN organizer_id INT;")
+                print("Added organizer_id to vendor_details")
+
+            # Check for location columns
+            location_cols = [
+                ("country", "VARCHAR(100)"),
+                ("state", "VARCHAR(100)"),
+                ("city", "VARCHAR(100)")
+            ]
+            for col, col_type in location_cols:
+                cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'vendor_details' AND COLUMN_NAME = %s AND TABLE_SCHEMA = DATABASE()", (col,))
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE vendor_details ADD COLUMN {col} {col_type};")
+                    print(f"Added {col} to vendor_details")
+
+            # Check for bank_passbook
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'vendor_details' AND COLUMN_NAME = 'bank_passbook' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE vendor_details ADD COLUMN bank_passbook LONGTEXT;")
+                print("Added bank_passbook to vendor_details")
+
+            # Check for audit columns
+            audit_cols = [
+                ("created_by", "VARCHAR(150)"),
+                ("modified_by", "VARCHAR(150)"),
+                ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                ("modified_on", "TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP")
+            ]
+            for col, col_type in audit_cols:
+                cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'vendor_details' AND COLUMN_NAME = %s AND TABLE_SCHEMA = DATABASE()", (col,))
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE vendor_details ADD COLUMN {col} {col_type};")
+                    print(f"Added {col} to vendor_details")
+        except Exception as e:
+            print("Alter vendor error:", e)
+
+    def alter_event_vendors(cursor):
+        try:
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'event_vendors' AND COLUMN_NAME = 'pass_count' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE event_vendors ADD COLUMN pass_count INT DEFAULT 0;")
+                print("Added pass_count to event_vendors")
+        except Exception as e:
+            print("Alter event_vendors error:", e)
+
+    def alter_sponsor_table_organizer(cursor):
+        try:
+            # Check for organizer_id
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'sponsors_details' AND COLUMN_NAME = 'organizer_id' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE sponsors_details ADD COLUMN organizer_id INT;")
+                print("Added organizer_id to sponsors_details")
+
+            # Check for audit columns
+            audit_cols = [
+                ("created_by", "VARCHAR(150)"),
+                ("modified_by", "VARCHAR(150)"),
+                ("created_at", "TIMESTAMP DEFAULT CURRENT_TIMESTAMP"),
+                ("modified_on", "TIMESTAMP NULL DEFAULT NULL ON UPDATE CURRENT_TIMESTAMP")
+            ]
+            for col, col_type in audit_cols:
+                cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'sponsors_details' AND COLUMN_NAME = %s AND TABLE_SCHEMA = DATABASE()", (col,))
+                if not cursor.fetchone():
+                    cursor.execute(f"ALTER TABLE sponsors_details ADD COLUMN {col} {col_type};")
+                    print(f"Added {col} to sponsors_details")
+        except Exception as e:
+            print("Alter sponsor error:", e)
+
     
+
+    def alter_event_terms_table(cursor):
+        try:
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'event_terms' AND COLUMN_NAME = 'is_default' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE event_terms ADD COLUMN is_default BOOLEAN DEFAULT FALSE;")
+                print("is_default added to event_terms")
+        except Exception as e:
+            print("Alter event_terms error:", str(e))
 
     def alter_users_table(cursor):
         try:
@@ -533,7 +692,8 @@ def create_tables():
                 ("country", "VARCHAR(100)"),
                 ("state", "VARCHAR(100)"),
                 ("city", "VARCHAR(100)"),
-                ("profile_image", "LONGTEXT")
+                ("profile_image", "LONGTEXT"),
+                ("organization_name", "VARCHAR(255)")
 
             ]
             for col_name, col_type in columns_to_add:
@@ -543,6 +703,21 @@ def create_tables():
                     print(f"Added {col_name} to users table")
         except Exception as e:
             print("Alter users error:", str(e))
+
+    def alter_venue_documents_table(cursor):
+        try:
+            cursor.execute("SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME = 'venue_documents' AND COLUMN_NAME = 'created_at' AND TABLE_SCHEMA = DATABASE()")
+            if not cursor.fetchone():
+                cursor.execute("ALTER TABLE venue_documents ADD COLUMN created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP;")
+                print("Added created_at to venue_documents")
+            try:
+                cursor.execute("ALTER TABLE venue_documents ADD CONSTRAINT fk_venue_documents_venue FOREIGN KEY (venue_id) REFERENCES venues(id) ON DELETE CASCADE;")
+                print("Added foreign key constraint to venue_documents")
+            except Exception:
+                pass
+        except Exception as e:
+            print("Alter venue_documents error:", str(e))
+
     # 1. First create base tables (No foreign keys or referenced by others)
     cursor.execute(users_table)
     alter_users_table(cursor)
@@ -567,12 +742,54 @@ def create_tables():
     cursor.execute(event_guest)
     cursor.execute(event_sponsors)
     cursor.execute(event_vendor)
+    alter_event_vendors(cursor)
+    print("Event vendors table checked")
     cursor.execute(user_booking_details)
     cursor.execute(stall_booking)
     cursor.execute(food_live_count)
     cursor.execute(messages_table)
     cursor.execute(feedback_table)
     cursor.execute(todo_tasks_table)
+    
+    # New tables for Food and Vehicle Pass Details
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS event_food_items (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        event_id INT,
+        caterer_name VARCHAR(150),
+        meal_type VARCHAR(50),
+        food_type VARCHAR(50),
+        price_inr DECIMAL(10, 2),
+        price_usd DECIMAL(10, 2),
+        menu_details TEXT,
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (event_id) REFERENCES event_details_table(id) ON DELETE CASCADE
+    )
+    """)
+    
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS event_vehicle_details (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        event_id INT,
+        vehicle_type VARCHAR(100),
+        price_inr DECIMAL(10, 2),
+        price_usd DECIMAL(10, 2),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (event_id) REFERENCES event_details_table(id) ON DELETE CASCADE
+    )
+    """)
+
+    cursor.execute("""
+    CREATE TABLE IF NOT EXISTS event_vehicle_addons (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        event_id INT,
+        is_parent BOOLEAN DEFAULT FALSE,
+        addon_name VARCHAR(150),
+        price DECIMAL(10, 2),
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY (event_id) REFERENCES event_details_table(id) ON DELETE CASCADE
+    )
+    """)
     
     # 3. Create remaining independent or specific tables
     cursor.execute(venues_table)
@@ -586,6 +803,12 @@ def create_tables():
     
     alter_policies_table(cursor)
     alter_booking_details_table(cursor)
+    alter_venues_table_organizer(cursor)
+    alter_venues_table_pincode(cursor)
+    alter_vendor_table_organizer(cursor)
+    alter_sponsor_table_organizer(cursor)
+    alter_event_terms_table(cursor)
+    alter_venue_documents_table(cursor)
     
     print("All tables checked / created successfully")
 
@@ -707,3 +930,6 @@ def create_tables():
     db.close()
 
     print("Tables checked / created successfully")
+
+if __name__ == "__main__":
+    create_tables()
