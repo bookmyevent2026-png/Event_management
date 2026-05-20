@@ -3,10 +3,25 @@ from flask import Blueprint, jsonify,request
 import json
 import os
 from werkzeug.utils import secure_filename
-from datetime import datetime
+from datetime import datetime, date, timedelta
 from app.init_db import get_db_connection
 from mysql.connector import Error
-from datetime import date
+
+from flask import Blueprint, jsonify, request, send_file, make_response, send_from_directory, after_this_request
+import json
+import os
+import pandas as pd
+from io import BytesIO
+from datetime import datetime, date, timedelta
+from app.middleware.role_required import role_required
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import letter, landscape
+from reportlab.pdfgen import canvas
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+from reportlab.lib.styles import getSampleStyleSheet
+import openpyxl
+import openpyxl.styles
+import openpyxl.utils
 super_admin_bp = Blueprint("super_admin", __name__)
 
 #@role_required("super_admin")
@@ -213,6 +228,7 @@ def create_venue():
         country_id = data.get("country")
         state_id = data.get("state")
         city_id = data.get("city")
+        pin_code = data.get("pin_code")
         status = data.get("status")
         venue_image = data.get("venue_image")
 
@@ -222,25 +238,28 @@ def create_venue():
         cursor = conn.cursor(dictionary=True)
 
         # get country name
-        cursor.execute(
-            "SELECT country_name FROM countries WHERE id=%s",
-            (country_id,)
-        )
-        country = cursor.fetchone()["country_name"]
+        if str(country_id).isdigit():
+            cursor.execute("SELECT country_name FROM countries WHERE id=%s", (country_id,))
+            country_row = cursor.fetchone()
+            country = country_row["country_name"] if country_row else country_id
+        else:
+            country = country_id
 
         # get state name
-        cursor.execute(
-            "SELECT state_name FROM states WHERE id=%s",
-            (state_id,)
-        )
-        state = cursor.fetchone()["state_name"]
+        if str(state_id).isdigit():
+            cursor.execute("SELECT state_name FROM states WHERE id=%s", (state_id,))
+            state_row = cursor.fetchone()
+            state = state_row["state_name"] if state_row else state_id
+        else:
+            state = state_id
 
         # get city name
-        cursor.execute(
-            "SELECT city_name FROM cities WHERE id=%s",
-            (city_id,)
-        )
-        city = cursor.fetchone()["city_name"]
+        if str(city_id).isdigit():
+            cursor.execute("SELECT city_name FROM cities WHERE id=%s", (city_id,))
+            city_row = cursor.fetchone()
+            city = city_row["city_name"] if city_row else city_id
+        else:
+            city = city_id
 
         # generate venue code
         cursor.execute("SELECT MAX(id) as max_id FROM venues")
@@ -249,12 +268,21 @@ def create_venue():
         new_number = (result["max_id"] or 0) + 1
         venue_code = f"VEN-{new_number}"
 
+        organizer_id = data.get("organizer_id")
+        created_by = data.get("created_by", "System")
+        
+        if organizer_id and created_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                created_by = user_row["name"]
+
         # insert venue
         cursor.execute(
             """
             INSERT INTO venues
-            (venue_code,venue_name,address,country_name,state_name,city_name,venue_image,status)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s)
+            (venue_code,venue_name,address,country_name,state_name,city_name,pin_code,venue_image,status,organizer_id,created_by)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 venue_code,
@@ -263,8 +291,11 @@ def create_venue():
                 country,
                 state,
                 city,
+                pin_code,
                 venue_image,
-                status
+                status,
+                organizer_id,
+                created_by
             )
         )
 
@@ -297,16 +328,98 @@ def create_venue():
         })
 
     except Exception as e:
-
+        print("Create Venue Error:", str(e))
         return jsonify({
             "error": str(e)
-        })
+        }), 500
 
     finally:
 
         cursor.close()
         conn.close()
 
+# -----------------------------------
+# UPDATE VENUE
+# -----------------------------------
+@super_admin_bp.route("/api/update_venue/<int:id>", methods=["PUT"])
+def update_venue(id):
+    try:
+        data = request.json
+        venue_name = data.get("venue_name")
+        address = data.get("address")
+        country_val = data.get("country")
+        state_val = data.get("state")
+        city_val = data.get("city")
+        pin_code = data.get("pin_code")
+        status = data.get("status")
+        venue_image = data.get("venue_image")
+        documents = data.get("documents")
+
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        if str(country_val).isdigit():
+            cursor.execute("SELECT country_name FROM countries WHERE id=%s", (country_val,))
+            country_row = cursor.fetchone()
+            country = country_row["country_name"] if country_row else ""
+        else:
+            country = country_val
+
+        if str(state_val).isdigit():
+            cursor.execute("SELECT state_name FROM states WHERE id=%s", (state_val,))
+            state_row = cursor.fetchone()
+            state = state_row["state_name"] if state_row else ""
+        else:
+            state = state_val
+
+        if str(city_val).isdigit():
+            cursor.execute("SELECT city_name FROM cities WHERE id=%s", (city_val,))
+            city_row = cursor.fetchone()
+            city = city_row["city_name"] if city_row else ""
+        else:
+            city = city_val
+
+        organizer_id = data.get("organizer_id")
+        modified_by = data.get("modified_by", "System")
+        
+        if organizer_id and modified_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                modified_by = user_row["name"]
+
+        cursor.execute(
+            """
+            UPDATE venues
+            SET venue_name=%s, address=%s, country_name=%s, state_name=%s, city_name=%s, 
+                pin_code=%s, venue_image=%s, status=%s, modified_by=%s
+            WHERE id=%s
+            """,
+            (venue_name, address, country, state, city, pin_code, venue_image, status, modified_by, id)
+        )
+
+        cursor.execute("DELETE FROM venue_documents WHERE venue_id=%s", (id,))
+        if documents:
+            for doc in documents:
+                cursor.execute(
+                    """
+                    INSERT INTO venue_documents (venue_id, document_type, document_number, document_file)
+                    VALUES (%s, %s, %s, %s)
+                    """,
+                    (id, doc.get("document_type"), doc.get("document_number"), doc.get("document_file"))
+                )
+
+        conn.commit()
+
+        return jsonify({"message": "Venue Updated"})
+
+    except Exception as e:
+        print("Update Venue Error:", str(e))
+        return jsonify({"error": str(e)}), 500
+
+    finally:
+        cursor.close()
+        conn.close()
 
 # -----------------------------------
 # GET VENUE LIST
@@ -316,13 +429,16 @@ def create_venue():
 def get_venues():
 
     try:
-
+        organizer_id = request.args.get("organizer_id")
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        cursor.execute(
-            "SELECT id,venue_code,venue_name,address,status FROM venues"
-        )
+        if organizer_id:
+            query = "SELECT id,venue_code,venue_name,address,status,created_by,created_at as created_on,modified_by,modified_on FROM venues WHERE organizer_id = %s"
+            cursor.execute(query, (organizer_id,))
+        else:
+            query = "SELECT id,venue_code,venue_name,address,status,created_by,created_at as created_on,modified_by,modified_on FROM venues"
+            cursor.execute(query)
 
         data = cursor.fetchall()
         print(data)
@@ -354,6 +470,9 @@ def delete_venue(id):
                 "status": False,
                 "message": "Venue not found"
             }), 404
+
+        # ✅ Delete associated documents first
+        cursor.execute("DELETE FROM venue_documents WHERE venue_id = %s", (id,))
 
         # ✅ Delete venue
         cursor.execute("DELETE FROM venues WHERE id = %s", (id,))
@@ -393,6 +512,8 @@ def venue_details(id):
         )
 
         venue = cursor.fetchone()
+        if venue and venue.get("venue_image"):
+            venue["venue_image"] = get_image_url(venue["venue_image"])
 
         cursor.execute(
             "SELECT * FROM venue_documents WHERE venue_id=%s",
@@ -400,6 +521,9 @@ def venue_details(id):
         )
 
         docs = cursor.fetchall()
+        for d in docs:
+            if d.get("document_file"):
+                d["document_file"] = get_image_url(d["document_file"])
 
         return jsonify({
             "venue": venue,
@@ -433,6 +557,7 @@ def create_sponsor_detail():
         mail_id = data["mail_id"]
         address = data["address"]
         status = data.get("status", "Active")
+        organizer_id = data.get("organizer_id")
 
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -440,14 +565,20 @@ def create_sponsor_detail():
         # Generate sponsor code
         cursor.execute("SELECT COUNT(*) FROM sponsors_details")
         count = cursor.fetchone()[0] + 1
-
         sponsor_code = f"SP{str(count).zfill(4)}"
+
+        created_by = data.get("created_by", "System")
+        if organizer_id and created_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                created_by = user_row[0]
 
         cursor.execute(
             """
-            INSERT INTO sponsors_details
-            (sponsor_code, sponsor_name, primary_contact, secondary_contact, mail_id, address, status)
-            VALUES (%s,%s,%s,%s,%s,%s,%s)
+            INSERT INTO sponsors_details 
+            (sponsor_code, sponsor_name, primary_contact, secondary_contact, mail_id, address, status, organizer_id, created_by)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             """,
             (
                 sponsor_code,
@@ -456,15 +587,34 @@ def create_sponsor_detail():
                 secondary_contact,
                 mail_id,
                 address,
-                status
+                status,
+                organizer_id,
+                created_by
             )
         )
+
+        sponsor_id = cursor.lastrowid
+
+        # Insert Documents
+        documents = data.get("documents", [])
+        for doc in documents:
+            cursor.execute("""
+                INSERT INTO sponsor_documents
+                (sponsor_id, document_type, document_number, document_file)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                sponsor_id,
+                doc.get("document_type"),
+                doc.get("document_number"),
+                doc.get("document_file")
+            ))
 
         conn.commit()
 
         return jsonify({
             "status": "success",
-            "message": "Sponsor created successfully"
+            "message": "Sponsor created successfully",
+            "sponsor_id": sponsor_id
         }), 201
 
     except Exception as e:
@@ -489,11 +639,25 @@ def create_sponsor_detail():
 
 @super_admin_bp.route("/api/sponsors", methods=["GET"])
 def get_sponsors():
-
+    organizer_id = request.args.get("organizer_id")
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("SELECT * FROM sponsors_details ORDER BY id DESC")
+    if organizer_id:
+        cursor.execute("""
+            SELECT id, sponsor_code, sponsor_name, primary_contact, secondary_contact, mail_id, address, status, 
+                   created_by, created_at as created_on, modified_by, modified_on 
+            FROM sponsors_details 
+            WHERE organizer_id = %s 
+            ORDER BY id DESC
+        """, (organizer_id,))
+    else:
+        cursor.execute("""
+            SELECT id, sponsor_code, sponsor_name, primary_contact, secondary_contact, mail_id, address, status, 
+                   created_by, created_at as created_on, modified_by, modified_on 
+            FROM sponsors_details 
+            ORDER BY id DESC
+        """)
 
     sponsors = cursor.fetchall()
 
@@ -508,9 +672,74 @@ def view_sponsor(id):
     cursor = conn.cursor(dictionary=True)
     cursor.execute("SELECT * FROM sponsors_details WHERE id=%s", (id,))
     sponsor = cursor.fetchone()
+    
+    if sponsor:
+        cursor.execute("SELECT * FROM sponsor_documents WHERE sponsor_id=%s", (id,))
+        docs = cursor.fetchall()
+        for d in docs:
+            if d.get("document_file"):
+                d["document_file"] = get_image_url(d["document_file"])
+        sponsor["documents"] = docs
+        
     cursor.close()
     conn.close()
     return jsonify(sponsor)
+
+@super_admin_bp.route("/api/update_sponsor/<int:id>", methods=["PUT"])
+def update_sponsor(id):
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        organizer_id = data.get("organizer_id")
+        modified_by = data.get("modified_by", "System")
+        
+        if organizer_id and modified_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                modified_by = user_row["name"]
+
+        cursor.execute("""
+            UPDATE sponsors_details 
+            SET sponsor_name=%s, primary_contact=%s, secondary_contact=%s, mail_id=%s, address=%s, status=%s, modified_by=%s
+            WHERE id=%s
+        """, (
+            data.get("sponsor_name"),
+            data.get("primary_contact"),
+            data.get("secondary_contact"),
+            data.get("mail_id"),
+            data.get("address"),
+            data.get("status", "Active"),
+            modified_by,
+            id
+        ))
+
+        # Update documents
+        cursor.execute("DELETE FROM sponsor_documents WHERE sponsor_id = %s", (id,))
+        documents = data.get("documents", [])
+        for doc in documents:
+            cursor.execute("""
+                INSERT INTO sponsor_documents
+                (sponsor_id, document_type, document_number, document_file)
+                VALUES (%s, %s, %s, %s)
+            """, (
+                id,
+                doc.get("document_type"),
+                doc.get("document_number"),
+                doc.get("document_file")
+            ))
+
+        conn.commit()
+        return jsonify({"status": "success", "message": "Sponsor updated successfully"}), 200
+
+    except Exception as e:
+        print("Update Sponsor Error:", str(e))
+        return jsonify({"status": "error", "message": str(e)}), 500
+    finally:
+        cursor.close()
+        conn.close()
 @super_admin_bp.route("/api/delete_sponsor/<int:id>", methods=["DELETE"])
 def delete_sponsor(id):
     try:
@@ -527,6 +756,9 @@ def delete_sponsor(id):
                 "message": "Sponsor not found"
             }), 404
 
+        # Delete documents first
+        cursor.execute("DELETE FROM sponsor_documents WHERE sponsor_id = %s", (id,))
+        
         # Delete sponsor
         cursor.execute("DELETE FROM sponsors_details WHERE id = %s", (id,))
         conn.commit()
@@ -550,6 +782,155 @@ def delete_sponsor(id):
         if conn:
             conn.close()
 
+# ================= SPONSOR EXPORT =================
+
+@super_admin_bp.route("/api/sponsors/export/excel", methods=["GET"])
+def export_sponsors_excel():
+    try:
+        print(f"INFO: [{datetime.now()}] Initiating Excel export for Sponsor Management.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+        SELECT 
+            sponsor_code,
+            sponsor_name,
+            primary_contact,
+            mail_id,
+            address,
+            status,
+            created_by,
+            created_at as created_on,
+            modified_by,
+            modified_on
+        FROM sponsors_details ORDER BY id DESC
+        """)
+        data = cursor.fetchall()
+        
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        df = pd.DataFrame(data)
+        df["created_on"] = pd.to_datetime(df["created_on"]).dt.tz_localize(None)
+        df["modified_on"] = pd.to_datetime(df["modified_on"]).dt.tz_localize(None)
+        df.columns = [
+            "Sponsor Code",
+            "Sponsor Name",
+            "Contact",
+            "Email",
+            "Address",
+            "Status",
+            "Created By",
+            "Created On",
+            "Modified By",
+            "Modified On"
+        ]
+        
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Sponsor_Report')
+            workbook = writer.book
+            worksheet = writer.sheets['Sponsor_Report']
+
+            # Apply date format
+            for cell in worksheet["H"][1:]:
+                cell.number_format = 'DD/MM/YYYY'
+            for cell in worksheet["J"][1:]:
+                cell.number_format = 'DD/MM/YYYY'
+
+            # Header Styling
+            header_font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            header_fill = openpyxl.styles.PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = openpyxl.styles.Alignment(horizontal="center")
+
+            output.seek(0)
+            filename = f"sponsor_list_{datetime.now().strftime('%Y_%m_%d')}.xlsx"
+        
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return response
+
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] Excel export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
+@super_admin_bp.route("/api/sponsors/export/pdf", methods=["GET"])
+def export_sponsors_pdf():
+    try:
+        print(f"INFO: [{datetime.now()}] Initiating PDF export for Sponsor Management.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT 
+                sponsor_name,
+                primary_contact,
+                status,
+                created_by,
+                DATE_FORMAT(created_at, '%d-%m-%Y') as created_on,
+                modified_by,
+                DATE_FORMAT(modified_on, '%d-%m-%Y') as modified_on
+            FROM sponsors_details 
+            ORDER BY id DESC
+        """)
+        data = cursor.fetchall()
+
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        output = BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=landscape(letter), topMargin=30, bottomMargin=30)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        title_style = styles['Title']
+        title_style.fontSize = 20
+        title_style.textColor = colors.HexColor("#1e40af")
+        elements.append(Paragraph("Sponsor Management Report", title_style))
+        elements.append(Spacer(1, 24))
+
+        table_data = [["Sponsor Name", "Contact", "Status", "Created By", "Created On", "Modified By", "Modified On"]]
+        for row in data:
+            table_data.append([
+                row['sponsor_name'],
+                row['primary_contact'],
+                row['status'],
+                row['created_by'] or 'System',
+                row['created_on'] or '',
+                row['modified_by'] or 'N/A',
+                row['modified_on'] or 'N/A'
+            ])
+
+        column_widths = [140, 90, 70, 100, 90, 100, 90]
+        t = Table(table_data, colWidths=column_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3b82f6")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+        output.seek(0)
+        filename = f"sponsor_list_{datetime.now().strftime('%Y_%m_%d')}.pdf"
+        return send_file(output, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] PDF export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
 @super_admin_bp.route("/api/create_vendor", methods=["POST"])
 def create_vendor():
 
@@ -568,6 +949,9 @@ def create_vendor():
         secondary_contact = data.get("secondary_contact")
         mail_id = data["mail_id"]
         address = data["address"]
+        country = data.get("country")
+        state = data.get("state")
+        city = data.get("city")
 
         bank_name = data.get("bank_name")
         account_holder = data.get("account_holder")
@@ -575,17 +959,26 @@ def create_vendor():
         account_number = data.get("account_number")
 
         status = data.get("status", "Active")
+        organizer_id = data.get("organizer_id")
+        bank_passbook = data.get("bank_passbook")
+        created_by = data.get("created_by", "System")
 
         documents = data.get("documents", [])
 
         conn = get_db_connection()
         cursor = conn.cursor()
 
+        if organizer_id and created_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                created_by = user_row[0]
+
         cursor.execute("""
         INSERT INTO vendor_details
-        (vendor_type,vendor_name,company_name,primary_contact,secondary_contact,mail_id,address,
-        bank_name,account_holder,ifsc_code,account_number,status)
-        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+        (vendor_type,vendor_name,company_name,primary_contact,secondary_contact,mail_id,country,state,city,address,
+        bank_name,account_holder,ifsc_code,account_number,bank_passbook,status,organizer_id,created_by)
+        VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
         """,(
             vendor_type,
             vendor_name,
@@ -593,12 +986,18 @@ def create_vendor():
             primary_contact,
             secondary_contact,
             mail_id,
+            country,
+            state,
+            city,
             address,
             bank_name,
             account_holder,
             ifsc_code,
             account_number,
-            status
+            bank_passbook,
+            status,
+            organizer_id,
+            created_by
         ))
 
         vendor_id = cursor.lastrowid
@@ -643,17 +1042,359 @@ def create_vendor():
         if conn:
             conn.close()
 
+
+#new Upaded Code on 15-05-2026
+@super_admin_bp.route("/api/update_vendor/<int:id>", methods=["PUT"])
+def update_vendor(id):
+
+    conn = None
+    cursor = None
+
+    try:
+
+        data = request.json
+        print("Update Data", data)
+
+        vendor_type = data.get("vendor_type")
+        vendor_name = data.get("vendor_name")
+        company_name = data.get("company_name")
+        primary_contact = data.get("primary_contact")
+        secondary_contact = data.get("secondary_contact")
+        mail_id = data.get("mail_id")
+        country = data.get("country")
+        state = data.get("state")
+        city = data.get("city")
+        address = data.get("address")
+
+        bank_name = data.get("bank_name")
+        account_holder = data.get("account_holder")
+        ifsc_code = data.get("ifsc_code")
+        account_number = data.get("account_number")
+        bank_passbook = data.get("bank_passbook")
+
+        status = data.get("status", "Active")
+        organizer_id = data.get("organizer_id")
+        modified_by = data.get("modified_by", "System")
+
+        documents = data.get("documents", [])
+
+        conn = get_db_connection()
+        cursor = conn.cursor()
+
+        if organizer_id and modified_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                modified_by = user_row[0]
+
+        cursor.execute("""
+        UPDATE vendor_details SET 
+        vendor_type=%s, vendor_name=%s, company_name=%s, primary_contact=%s, 
+        secondary_contact=%s, mail_id=%s, country=%s, state=%s, city=%s, address=%s, bank_name=%s, 
+        account_holder=%s, ifsc_code=%s, account_number=%s, bank_passbook=%s, status=%s, organizer_id=COALESCE(%s, organizer_id), modified_by=%s
+        WHERE id=%s
+        """, (
+            vendor_type, vendor_name, company_name, primary_contact,
+            secondary_contact, mail_id, country, state, city, address, bank_name,
+            account_holder, ifsc_code, account_number, bank_passbook, status, organizer_id, modified_by, id
+        ))
+
+        # Delete existing documents
+        cursor.execute("DELETE FROM vendor_documents WHERE vendor_id=%s", (id,))
+
+        # Insert Documents
+        for doc in documents:
+            cursor.execute("""
+            INSERT INTO vendor_documents
+            (vendor_id,document_type,document_number,document_file)
+            VALUES (%s,%s,%s,%s)
+            """, (
+                id,
+                doc["document_type"],
+                doc["document_number"],
+                doc["document_file"]
+            ))
+
+        conn.commit()
+
+        return jsonify({
+            "status": "success",
+            "message": "Vendor updated successfully"
+        })
+
+    except Exception as e:
+        if conn:
+            conn.rollback()
+        return jsonify({
+            "status": "error",
+            "message": str(e)
+        }), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
+
+# ================= VENDOR EXPORT =================
+#new Upaded Code on 15-05-2026
+@super_admin_bp.route("/api/vendors/export/excel", methods=["GET"])
+def export_vendors_excel():
+    try:
+        print(f"INFO: [{datetime.now()}] Initiating Excel export for Vendor Management.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+        SELECT 
+            vendor_name,
+            primary_contact,
+            mail_id,
+            country,
+            state,
+            city,
+            address,
+            status,
+            created_by,
+            created_at as created_on,
+            modified_by,
+            modified_on
+        FROM vendor_details ORDER BY id DESC
+        """)
+        data = cursor.fetchall()
+        
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        df = pd.DataFrame(data)
+        df["created_on"] = pd.to_datetime(df["created_on"]).dt.tz_localize(None)
+        df["modified_on"] = pd.to_datetime(df["modified_on"]).dt.tz_localize(None)
+        df.columns = [
+            "Vendor Name",
+            "Contact",
+            "Email",
+            "Country",
+            "State",
+            "City",
+            "Address",
+            "Status",
+            "Created By",
+            "Created On",
+            "Modified By",
+            "Modified On"
+        ]
+        
+        output = BytesIO()
+
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+
+            df.to_excel(writer, index=False, sheet_name='Vendor_Report')
+
+            workbook = writer.book
+            worksheet = writer.sheets['Vendor_Report']
+
+            # Apply date format
+            for cell in worksheet["G"][1:]:
+                cell.number_format = 'DD/MM/YYYY'
+            for cell in worksheet["I"][1:]:
+                cell.number_format = 'DD/MM/YYYY'
+
+            # Header Styling
+            header_font = openpyxl.styles.Font(
+                bold=True,
+                color="FFFFFF"
+            )
+
+            header_fill = openpyxl.styles.PatternFill(
+                start_color="4F81BD",
+                end_color="4F81BD",
+                fill_type="solid"
+            )
+
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = openpyxl.styles.Alignment(
+                    horizontal="center"
+                )
+
+            # Alternate Row Styling & Column Width
+            thin_border = openpyxl.styles.Side(
+                border_style="thin",
+                color="000000"
+            )
+
+            border = openpyxl.styles.Border(
+                left=thin_border,
+                right=thin_border,
+                top=thin_border,
+                bottom=thin_border
+            )
+
+            for row_idx, row in enumerate(
+                worksheet.iter_rows(min_row=2, max_row=len(data)+1),
+                start=2
+            ):
+
+                fill = openpyxl.styles.PatternFill(
+                    start_color="DCE6F1",
+                    end_color="DCE6F1",
+                    fill_type="solid"
+                ) if row_idx % 2 == 0 else None
+
+                for cell in row:
+                    if fill:
+                        cell.fill = fill
+
+                    cell.border = border
+
+                # Auto width
+                for idx, col in enumerate(df.columns):
+                    try:
+                        max_len = max(
+                            df[col].astype(str).map(len).max(),
+                            len(col)
+                        ) + 4
+
+                        worksheet.column_dimensions[
+                            openpyxl.utils.get_column_letter(idx + 1)
+                        ].width = min(max_len, 50)
+
+                    except:
+                        worksheet.column_dimensions[
+                            openpyxl.utils.get_column_letter(idx + 1)
+                        ].width = 20
+
+                    worksheet.freeze_panes = 'A2'
+
+            output.seek(0)
+            filename = f"vendor_list_{datetime.now().strftime('%Y_%m_%d')}.xlsx"
+            print(f"INFO: [{datetime.now()}] Excel export completed: {filename}")
+        
+        # ✅ Safest alternative: Return raw bytes with explicit headers
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return response
+
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] Excel export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+#new Upaded Code on 15-05-2026
+@super_admin_bp.route("/api/vendors/export/pdf", methods=["GET"])
+def export_vendors_pdf():
+    try:
+        print(f"INFO: [{datetime.now()}] Initiating PDF export for Vendor Management.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("""
+            SELECT 
+                vendor_name,
+                primary_contact,
+                mail_id,
+                address,
+                status,
+                created_by,
+                DATE_FORMAT(created_at, '%d-%m-%Y') as created_on,
+                modified_by,
+                DATE_FORMAT(modified_on, '%d-%m-%Y') as modified_on
+            FROM vendor_details 
+            ORDER BY id DESC
+        """)
+        data = cursor.fetchall()
+
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        output = BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=landscape(letter), topMargin=30, bottomMargin=30)
+        elements = []
+        
+        styles = getSampleStyleSheet()
+        
+        # Title Section
+        title_style = styles['Title']
+        title_style.fontSize = 20
+        title_style.textColor = colors.HexColor("#1e40af")
+        elements.append(Paragraph("Vendor Management Report", title_style))
+        
+        date_style = styles['Normal']
+        date_style.alignment = 1
+        elements.append(Paragraph(f"Exported on: {datetime.now().strftime('%B %d, %Y | %H:%M:%S')}", date_style))
+        elements.append(Spacer(1, 24))
+
+        # Table Construction
+        table_data = [["Vendor Name", "Contact", "Status", "Created By", "Created On", "Modified By", "Modified On"]]
+        
+        for row in data:
+            table_data.append([
+                row['vendor_name'],
+                row['primary_contact'],
+                row['status'],
+                row['created_by'] or 'System',
+                row['created_on'] or '',
+                row['modified_by'] or 'N/A',
+                row['modified_on'] or 'N/A'
+            ])
+
+        # Table Formatting
+        column_widths = [140, 90, 70, 100, 90, 100, 90]
+        t = Table(table_data, colWidths=column_widths, repeatRows=1)
+        
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3b82f6")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+        
+        output.seek(0)
+        filename = f"vendor_list_{datetime.now().strftime('%Y_%m_%d')}.pdf"
+        print(f"INFO: [{datetime.now()}] PDF export completed: {filename}")
+        
+        return send_file(output, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] PDF export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
+        
 @super_admin_bp.route("/api/vendors", methods=["GET"])
 def get_vendors():
 
+    organizer_id = request.args.get("organizer_id")
     conn = get_db_connection()
     cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("""
-    SELECT id,vendor_name,primary_contact,mail_id,address,status
-    FROM vendor_details
-    ORDER BY id DESC
-    """)
+    if organizer_id:
+        query = """
+        SELECT id,vendor_name,primary_contact,mail_id,country,state,city,address,status,created_by,created_at as created_on,modified_by,modified_on
+        FROM vendor_details
+        WHERE organizer_id = %s
+        ORDER BY id DESC
+        """
+        cursor.execute(query, (organizer_id,))
+    else:
+        query = """
+        SELECT id,vendor_name,primary_contact,mail_id,country,state,city,address,status,created_by,created_at as created_on,modified_by,modified_on
+        FROM vendor_details
+        ORDER BY id DESC
+        """
+        cursor.execute(query)
 
     vendors = cursor.fetchall()
 
@@ -674,11 +1415,16 @@ def view_vendor(id):
 
     vendor = cursor.fetchone()
 
+    if vendor and vendor.get("bank_passbook"):
+        vendor["bank_passbook"] = get_image_url(vendor["bank_passbook"])
+
     cursor.execute(
         "SELECT * FROM vendor_documents WHERE vendor_id=%s",(id,)
     )
-
     documents = cursor.fetchall()
+    for d in documents:
+        if d.get("document_file"):
+            d["document_file"] = get_image_url(d["document_file"])
 
     vendor["documents"] = documents
     print("Vendar",vendor)
@@ -734,17 +1480,23 @@ def delete_vendor(id):
 
 @super_admin_bp.route("/api/venues_details", methods=["GET"])
 def get_venues_detail():
-
-    db = get_db_connection()
-    cursor = db.cursor(dictionary=True)
-
-    cursor.execute("SELECT id, venue_name, city_name FROM venues WHERE status='active'")
-    venues = cursor.fetchall()
-
-    cursor.close()
-    db.close()
-
-    return jsonify(venues)
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        # Use 'Active' to match the database default
+        cursor.execute("SELECT id, venue_name, city_name, address, state_name, country_name, pin_code FROM venues WHERE status='Active'")
+        venues = cursor.fetchall()
+        return jsonify(venues)
+    except Exception as e:
+        print("Error fetching venues details:", str(e))
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 @super_admin_bp.route("/api/create_policy", methods=["POST"])
 def create_policy():
     try:
@@ -759,19 +1511,29 @@ def create_policy():
         new_number = (result["max_id"] or 0) + 1
         policy_code = f"POL-{new_number}"
 
+        organizer_id = data.get("organizer_id")
+        created_by = data.get("created_by", "System")
+        
+        if organizer_id and created_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                created_by = user_row["name"]
+
         # ✅ INSERT
         cursor.execute("""
             INSERT INTO policies 
-            (policy_code, policy_name, policy_type, policy_group, description,organizer_id ,status)
-            VALUES (%s, %s, %s, %s, %s, %s,%s)
+            (policy_code, policy_name, policy_type, policy_group, description, organizer_id, status, created_by)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (
             policy_code,
             data.get("policy_name"),
             data.get("policy_type"),
             data.get("policy_group"),
             data.get("description"),
-            data.get("organizer_id"),
-            data.get("status", "Active")
+            organizer_id,
+            data.get("status", "Active"),
+            created_by
         ))
 
         conn.commit()
@@ -787,6 +1549,48 @@ def create_policy():
             "error": "Failed to create policy",
             "details": str(e)
         }), 500
+
+    finally:
+        cursor.close()
+        conn.close()
+
+@super_admin_bp.route("/api/update_policy/<int:id>", methods=["PUT"])
+def update_policy(id):
+    try:
+        data = request.json
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+
+        organizer_id = data.get("organizer_id")
+        modified_by = data.get("modified_by", "System")
+        
+        if organizer_id and modified_by == "System":
+            cursor.execute("SELECT name FROM users WHERE id = %s", (organizer_id,))
+            user_row = cursor.fetchone()
+            if user_row:
+                modified_by = user_row["name"]
+
+        cursor.execute("""
+            UPDATE policies 
+            SET policy_name=%s, policy_type=%s, policy_group=%s, description=%s, status=%s, modified_by=%s
+            WHERE id=%s
+        """, (
+            data.get("policy_name"),
+            data.get("policy_type"),
+            data.get("policy_group"),
+            data.get("description"),
+            data.get("status", "Active"),
+            modified_by,
+            id
+        ))
+
+        conn.commit()
+
+        return jsonify({"message": "Policy updated successfully"}), 200
+
+    except Exception as e:
+        print("Update Policy ERROR:", str(e))
+        return jsonify({"error": "Failed to update policy", "details": str(e)}), 500
 
     finally:
         cursor.close()
@@ -841,7 +1645,7 @@ def get_policies(organizer_id):
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
 
-        query = "SELECT * FROM policies WHERE organizer_id = %s"
+        query = "SELECT id, policy_code, policy_name, policy_type, policy_group, description, organizer_id, status, created_by, created_at as created_on, modified_by, modified_on FROM policies WHERE organizer_id = %s ORDER BY id DESC"
         cursor.execute(query, (organizer_id,))
 
         policies = cursor.fetchall()
@@ -856,7 +1660,8 @@ def get_policies(organizer_id):
         print("Error fetching policies:", str(e))
         return jsonify({
             "success": False,
-            "message": "Failed to fetch policies"
+            "message": "Failed to fetch policies",
+            "error": str(e)
         }), 500
 
     finally:
@@ -869,11 +1674,22 @@ def get_policies(organizer_id):
 # GET SINGLE
 @super_admin_bp.route("/api/policy/<int:id>", methods=["GET"])
 def get_policy(id):
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
-
-    cursor.execute("SELECT * FROM policies WHERE id=%s", (id,))
-    return jsonify(cursor.fetchone())
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT * FROM policies WHERE id=%s", (id,))
+        policy = cursor.fetchone()
+        return jsonify(policy)
+    except Exception as e:
+        print("Error fetching single policy:", str(e))
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 import datetime as dt
 
 def format_date(date_str):
@@ -925,7 +1741,6 @@ def format_datetime(dt_str):
 
 
 import os
-from werkzeug.utils import secure_filename
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 BASE_UPLOAD = os.path.abspath(os.path.join(BASE_DIR, "..", "uploads"))
@@ -963,6 +1778,8 @@ def complete_event_creation():
         layout_details = json.loads(request.form.get("layout", "{}"))
         terms_data = json.loads(request.form.get("terms", "[]"))
         vendors_data = json.loads(request.form.get("vendors", "{}"))
+        food_provision = json.loads(request.form.get("foodProvision", '{"items": []}'))
+        vehicle_provision = json.loads(request.form.get("vehicleProvision", '{"details": [], "addons": []}'))
 
         # 1. 🔹 INSERT EVENT DETAILS
         insert_event_query = """
@@ -973,19 +1790,19 @@ def complete_event_creation():
             visitor_mail, visitor_name, visitor_photo, visitor_mobile, document_proof,
             day_pass, is_international_include,
             aadhar, passport,
-            welcome_kit, food,
+            welcome_kit, food, vehicle_pass, vehicle_number,
             event_type, occurrence,
             start_date, start_time, end_date, end_time,
             venue, address, created_by, user_id, status
         )
-        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
         """
         event_values = (
             event_details.get("category"),
             event_details.get("eventName"),
             event_details.get("description"),
             event_details.get("amenities", []),
-            ",".join(event_details.get("tags", [])),
+            event_details.get("tags", ""),
             event_details.get("visibility"),
             str(event_details.get("includeProgram", False)),
             event_details.get("mail", False),
@@ -1002,8 +1819,10 @@ def complete_event_creation():
             event_details.get("passport", False),
             event_details.get("welcomeKit", False),
             event_details.get("food", False),
-            event_details.get("eventType"),
-            event_details.get("occurrence"),
+            event_details.get("vehiclePass", False),
+            event_details.get("vehicleNumber", False),
+            event_type := event_details.get("eventType"),
+            occurrence := event_details.get("occurrence"),
             format_date(event_details.get("startDate")),
             format_time(event_details.get("startTime")),
             format_date(event_details.get("endDate")),
@@ -1045,7 +1864,7 @@ def complete_event_creation():
             booking_details.get("includeTax", False),
             booking_details.get("priceType"),
             booking_details.get("currency"),
-            format_date(booking_details.get("earlyBirdExpire"))
+            format_datetime(booking_details.get("earlyBirdExpire"))
         )
         cursor.execute(insert_booking_query, booking_values)
 
@@ -1125,9 +1944,9 @@ def complete_event_creation():
         # 7. 🔹 INSERT TERMS
         for term in terms_data:
             cursor.execute("""
-                INSERT INTO event_terms (event_id, policy_group, policy_type, policy_name)
-                VALUES (%s, %s, %s, %s)
-            """, (event_id, term.get("policyGroup"), term.get("policyType"), term.get("policyName")))
+                INSERT INTO event_terms (event_id, policy_group, policy_type, policy_name, is_default)
+                VALUES (%s, %s, %s, %s, %s)
+            """, (event_id, term.get("policyGroup"), term.get("policyType"), term.get("policyName"), term.get("isDefault", False)))
 
         # 8. 🔹 INSERT VENDORS, SPONSORS, GUESTS
         for v in vendors_data.get("vendors", []):
@@ -1136,6 +1955,27 @@ def complete_event_creation():
             cursor.execute("INSERT INTO event_sponsors (event_id, sponsor_name, sponsorship_type) VALUES (%s, %s, %s)", (event_id, s.get("sponsorName"), s.get("sponsorship")))
         for g in vendors_data.get("guests", []):
             cursor.execute("INSERT INTO event_guests (event_id, guest_name, designation, contact, image) VALUES (%s, %s, %s, %s, %s)", (event_id, g.get("name"), g.get("designation"), g.get("contact"), g.get("image")))
+
+        # 9. 🔹 INSERT FOOD ITEMS
+        for item in food_provision.get("items", []):
+            cursor.execute("""
+                INSERT INTO event_food_items (event_id, caterer_name, meal_type, food_type, price_inr, price_usd, menu_details)
+                VALUES (%s, %s, %s, %s, %s, %s, %s)
+            """, (event_id, item.get("catererName"), item.get("mealType"), item.get("foodType"), item.get("priceINR") or 0, item.get("priceUSD") or 0, item.get("menuDetails")))
+
+        # 10. 🔹 INSERT VEHICLE DETAILS
+        for item in vehicle_provision.get("details", []):
+            cursor.execute("""
+                INSERT INTO event_vehicle_details (event_id, vehicle_type, price_inr, price_usd)
+                VALUES (%s, %s, %s, %s)
+            """, (event_id, item.get("vehicleType"), item.get("priceINR") or 0, item.get("priceUSD") or 0))
+
+        # 11. 🔹 INSERT VEHICLE ADDONS
+        for item in vehicle_provision.get("addons", []):
+            cursor.execute("""
+                INSERT INTO event_vehicle_addons (event_id, is_parent, addon_name, price)
+                VALUES (%s, %s, %s, %s)
+            """, (event_id, item.get("isParent", False), item.get("addOnName"), item.get("price") or 0))
 
         conn.commit()
         return jsonify({"message": "Event created and submitted successfully", "event_id": event_id}), 201
@@ -1153,6 +1993,8 @@ def complete_event_creation():
 
 @super_admin_bp.route("/api/all-policies", methods=["GET"])
 def get_all_policies():
+    conn = None
+    cursor = None
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
@@ -1164,9 +2006,6 @@ def get_all_policies():
         """)
 
         rows = cursor.fetchall()
-
-        cursor.close()
-        conn.close()
 
         # 🔥 Convert to nested JSON
         data = {}
@@ -1187,20 +2026,34 @@ def get_all_policies():
         return jsonify(data)
 
     except Exception as e:
+        print("Error in get_all_policies:", str(e))
         return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 # ✅ Get Vendor Types
 @super_admin_bp.route("/api/get-vendor-types", methods=["GET"])
 def get_vendor_types():
-    conn = get_db_connection()
-    cursor = conn.cursor(dictionary=True)
+    conn = None
+    cursor = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
 
-    cursor.execute("SELECT id,vendor_type FROM vendor_details")
-    data = cursor.fetchall()
+        cursor.execute("SELECT id,vendor_type FROM vendor_details")
+        data = cursor.fetchall()
 
-    cursor.close()
-    conn.close()
-
-    return jsonify(data)
+        return jsonify(data)
+    except Exception as e:
+        print("Error in get_vendor_types:", str(e))
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if cursor:
+            cursor.close()
+        if conn:
+            conn.close()
 
 
 # ✅ Get Vendor Names based on type
@@ -1347,7 +2200,6 @@ def final_submit():
         return jsonify({"error": str(e)}), 500
 
 from flask import send_from_directory
-import datetime
 # =====================================================
 # ✅ ABSOLUTE UPLOAD FOLDER
 # =====================================================
@@ -1357,6 +2209,27 @@ UPLOAD_FOLDER = os.path.abspath(os.path.join(BASE_DIR, "..", "uploads"))
 # Example:
 # D:/Project/app/super_admin → BASE_DIR
 # D:/Project/app/uploads → UPLOAD_FOLDER
+
+
+# =========================
+# [CHECK] URL HELPER
+# =========================
+def get_image_url(path):
+    if not path:
+        return None
+    file_path = str(path).replace("\\", "/")
+    
+    # If it contains "uploads/", strip everything before it to make it relative
+    if "uploads/" in file_path:
+        relative_part = file_path.split("uploads/")[-1]
+        return f"https://eventsapi.sportalytics.in/uploads/{relative_part.lstrip('/')}"
+    
+    # Fallback for paths that don't have uploads/
+    # If it starts with http or data URI, return it unmodified
+    if file_path.startswith(("http://", "https://", "data:")):
+        return file_path
+    
+    return f"https://eventsapi.sportalytics.in/{file_path.lstrip('/')}"
 
 
 # =====================================================
@@ -1438,7 +2311,7 @@ def get_events():
 
             for tf in ["start_time", "end_time"]:
                 if row.get(tf):
-                    if isinstance(row[tf], datetime.timedelta):
+                    if isinstance(row[tf], timedelta):
                         total_seconds = int(row[tf].total_seconds())
                         hours = total_seconds // 3600
                         minutes = (total_seconds % 3600) // 60
@@ -1447,21 +2320,9 @@ def get_events():
                         row[tf] = str(row[tf])
 
             # =========================
-            # ✅ IMAGE PATH FIX (IMPORTANT)
+            # [CHECK] IMAGE PATH FIX (IMPORTANT)
             # =========================
-            banner_url = None
-            if row["file_path"]:
-                file_path = row["file_path"].replace("\\", "/")
-                
-                if "/uploads/" in file_path:
-                    relative_path = file_path.split("/uploads/")[-1]
-                elif "uploads/" in file_path:
-                    relative_path = file_path.split("uploads/")[-1]
-                else:
-                    relative_path = file_path
-
-                base_url = request.host_url.rstrip("/")
-                banner_url = f"{base_url}/superadmin/uploads/{relative_path.lstrip('/')}"
+            banner_url = get_image_url(row.get("file_path"))
                 
             event_id = row["id"]
             if event_id not in events_dict:
@@ -1485,7 +2346,6 @@ def get_events():
     except Exception as e:
         print("ERROR:", e)
         return jsonify({"error": str(e)}), 500
-from flask import request
 @super_admin_bp.route("/home/get-events", methods=["GET"])
 def get_home_events():
     try:
@@ -1533,7 +2393,7 @@ def get_home_events():
             # ✅ TIME FIX
             # =========================
             if row["start_time"]:
-                if isinstance(row["start_time"], datetime.timedelta):
+                if isinstance(row["start_time"], timedelta):
                     total_seconds = int(row["start_time"].total_seconds())
                     hours = total_seconds // 3600
                     minutes = (total_seconds % 3600) // 60
@@ -1542,21 +2402,9 @@ def get_home_events():
                     row["start_time"] = str(row["start_time"])
 
             # =========================
-            # ✅ IMAGE PATH FIX (IMPORTANT)
+            # [CHECK] IMAGE PATH FIX (IMPORTANT)
             # =========================
-            banner_url = None
-            if row["file_path"]:
-                file_path = row["file_path"].replace("\\", "/")
-                
-                if "/uploads/" in file_path:
-                    relative_path = file_path.split("/uploads/")[-1]
-                elif "uploads/" in file_path:
-                    relative_path = file_path.split("uploads/")[-1]
-                else:
-                    relative_path = file_path
-
-                base_url = request.host_url.rstrip("/")
-                banner_url = f"{base_url}/superadmin/uploads/{relative_path.lstrip('/')}"
+            banner_url = get_image_url(row.get("file_path"))
                 
             event_id = row["id"]
             if event_id not in events_dict:
@@ -1577,12 +2425,13 @@ def get_home_events():
 
         return jsonify(final_data), 200
 
+
     except Exception as e:
         print("ERROR:", e)
         return jsonify({"error": str(e)}), 500
 
 
-from datetime import timedelta
+# --- timedelta handled at top ---
 
 @super_admin_bp.route('/booking/event/<int:event_id>', methods=['GET'])
 def get_event_booking(event_id):
@@ -1615,7 +2464,7 @@ def get_event_full_details(event_id):
 
         # Date/Time formatting
         for key, val in details.items():
-            if isinstance(val, (date, datetime.datetime)):
+            if isinstance(val, (date, datetime)):
                 details[key] = val.strftime("%Y-%m-%d")
             elif isinstance(val, timedelta):
                 total_seconds = int(val.total_seconds())
@@ -1628,7 +2477,9 @@ def get_event_full_details(event_id):
         booking = cursor.fetchone()
         if booking:
             for key, val in booking.items():
-                if isinstance(val, (date, datetime.datetime)):
+                if isinstance(val, datetime) and key == "early_bird_expire":
+                    booking[key] = val.strftime("%Y-%m-%dT%H:%M")
+                elif isinstance(val, (date, datetime)):
                     booking[key] = val.strftime("%Y-%m-%d")
 
         # 3. Layout Details
@@ -1646,9 +2497,7 @@ def get_event_full_details(event_id):
         files = cursor.fetchall()
         
         for f in files:
-            if f["file_path"]:
-                base_url = request.host_url.rstrip("/")
-                f["url"] = f"{base_url}/superadmin{f['file_path']}"
+            f["url"] = get_image_url(f.get("file_path"))
 
         # 5. Terms
         cursor.execute("SELECT * FROM event_terms WHERE event_id = %s", (event_id,))
@@ -1663,6 +2512,18 @@ def get_event_full_details(event_id):
         
         cursor.execute("SELECT * FROM event_guests WHERE event_id = %s", (event_id,))
         guests = cursor.fetchall()
+        for g in guests:
+            g["image_url"] = get_image_url(g.get("image"))
+        
+        # 7. Food Items & Vehicle Details
+        cursor.execute("SELECT * FROM event_food_items WHERE event_id = %s", (event_id,))
+        food_items = cursor.fetchall()
+        
+        cursor.execute("SELECT * FROM event_vehicle_details WHERE event_id = %s", (event_id,))
+        vehicle_details = cursor.fetchall()
+
+        cursor.execute("SELECT * FROM event_vehicle_addons WHERE event_id = %s", (event_id,))
+        vehicle_addons = cursor.fetchall()
 
         result = {
             "details": details,
@@ -1678,7 +2539,10 @@ def get_event_full_details(event_id):
                 "vendors": vendors,
                 "sponsors": sponsors,
                 "guests": guests
-            }
+            },
+            "food_items": food_items,
+            "vehicle_details": vehicle_details,
+            "vehicle_addons": vehicle_addons
         }
 
         return jsonify(result)
@@ -1706,11 +2570,7 @@ def get_single_booking(id):
         if not booking:
             return jsonify({"message": "Booking not found"}), 404
 
-        if booking.get("visiting_card"):
-            base_url = request.host_url.rstrip("/")
-            booking["visiting_card_url"] = f"{base_url}/superadmin/uploads/{os.path.basename(booking['visiting_card'])}"
-        else:
-            booking["visiting_card_url"] = None
+        booking["visiting_card_url"] = get_image_url(booking.get("visiting_card"))
 
         return jsonify(booking), 200
 
@@ -1726,12 +2586,26 @@ def get_all_bookings():
         cursor.execute("SELECT * FROM Exhibitor_stall_bookings ORDER BY created_at DESC")
         bookings = cursor.fetchall()
 
-        base_url = request.host_url.rstrip("/")
         for b in bookings:
-            if b.get("visiting_card"):
-                b["visiting_card_url"] = f"{base_url}/superadmin/uploads/{os.path.basename(b['visiting_card'])}"
-            else:
-                b["visiting_card_url"] = None
+            b["visiting_card_url"] = get_image_url(b.get("visiting_card"))
+
+        return jsonify(bookings), 200
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+#new Add the Function 
+@super_admin_bp.route('/api/admin/bookings/event/<int:event_id>', methods=['GET'])
+def get_bookings_by_event(event_id):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        print("Event id", event_id)
+
+        cursor.execute("SELECT * FROM Exhibitor_stall_bookings WHERE event_id = %s ORDER BY created_at DESC", (event_id,))
+        bookings = cursor.fetchall()
+
+        for b in bookings:
+            b["visiting_card_url"] = get_image_url(b.get("visiting_card"))
 
         return jsonify(bookings), 200
 
@@ -2021,6 +2895,7 @@ def get_messages_by_event(event_id):
         for row in data:
             if row.get("created_at"):
                 row["created_at"] = row["created_at"].strftime("%d/%m/%Y %H:%M")
+            row["image_url"] = get_image_url(row.get("image_path"))
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2113,6 +2988,8 @@ def update_event(event_id):
              layout_details = json.loads(request.form.get('layout', '{}'))
              terms_data = json.loads(request.form.get('terms', '[]'))
              vendors_data = json.loads(request.form.get('vendors', '{}'))
+             food_provision = json.loads(request.form.get('foodProvision', '{"items": []}'))
+             vehicle_provision = json.loads(request.form.get('vehicleProvision', '{"details": [], "addons": []}'))
 
              # 1. Update Core Details
              cursor.execute("""
@@ -2121,7 +2998,7 @@ def update_event(event_id):
                     include_program=%s, visibility=%s, mail=%s, whatsapp=%s, print=%s,
                     visitor_mail=%s, visitor_name=%s, visitor_photo=%s, visitor_mobile=%s, document_proof=%s,
                     day_pass=%s, is_international_include=%s, aadhar=%s, passport=%s,
-                    welcome_kit=%s, food=%s, event_type=%s, occurrence=%s,
+                    welcome_kit=%s, food=%s, vehicle_pass=%s, vehicle_number=%s, event_type=%s, occurrence=%s,
                     start_date=%s, start_time=%s, end_date=%s, end_time=%s, venue=%s, address=%s
                 WHERE id=%s
              """, (
@@ -2136,31 +3013,79 @@ def update_event(event_id):
                  event_details.get('visitorMail'), event_details.get('visitorName'), event_details.get('visitorPhoto'), event_details.get('visitorMobile'), event_details.get('documentProof'),
                  event_details.get('dayPass'), event_details.get('isInternationalInclude'), event_details.get('aadhar'), event_details.get('passport'),
                  event_details.get('welcomeKit'), event_details.get('food'),
+                 event_details.get('vehiclePass'), event_details.get('vehicleNumber', False),
                  event_details.get('eventType'), event_details.get('occurrence'),
-                 event_details.get('startDate'), event_details.get('startTime'),
-                 event_details.get('endDate'), event_details.get('endTime'),
+                 format_date(event_details.get('startDate')), format_time(event_details.get('startTime')),
+                 format_date(event_details.get('endDate')), format_time(event_details.get('endTime')),
                  event_details.get('venue'), event_details.get('address'),
                  event_id
              ))
 
              # 2. Update Booking
              if booking_details:
-                 cursor.execute("""
-                    UPDATE event_booking_details
-                    SET booking_start_date=%s, booking_end_date=%s, capacity=%s, pass_type=%s, entry_type=%s, charge_type=%s
-                    WHERE event_id=%s
-                 """, (
-                     booking_details.get('bookingStartDate'),
-                     booking_details.get('bookingEndDate'),
-                     booking_details.get('capacity'),
-                     booking_details.get('passType'),
-                     booking_details.get('entryType'),
-                     booking_details.get('chargeType'),
-                     event_id
-                 ))
+                   cursor.execute("""
+                     UPDATE event_booking_details
+                     SET booking_start_date=%s, booking_end_date=%s, capacity=%s, pass_type=%s, entry_type=%s, charge_type=%s,
+                         max_pass=%s, razorpay_key=%s, include_tax=%s, price_type=%s, currency=%s, early_bird_expire=%s
+                     WHERE event_id=%s
+                   """, (
+                       format_date(booking_details.get('bookingStartDate')),
+                       format_date(booking_details.get('bookingEndDate')),
+                       booking_details.get('capacity'),
+                       booking_details.get('passType'),
+                       booking_details.get('entryType'),
+                       booking_details.get('chargeType'),
+                       booking_details.get('maxPass'),
+                       booking_details.get('razorpayKey'),
+                       booking_details.get('includeTax', False),
+                       booking_details.get('priceType'),
+                       booking_details.get('currency'),
+                       format_datetime(booking_details.get('earlyBirdExpire')),
+                       event_id
+                   ))
 
-             # 3. Update Stalls (Delete and Re-insert)
-             if 'stalls' in layout_details:
+             # 3. Update Layout Master & Stalls (Delete and Re-insert)
+             if layout_details:
+                 # Check if layout master exists
+                 cursor.execute("SELECT COUNT(*) FROM event_layout WHERE event_id = %s", (event_id,))
+                 layout_exists = cursor.fetchone()[0] > 0
+                 
+                 day_based = 1 if layout_details.get("dayBased") in [True, 1, "1", "true", "True"] else 0
+                 include_tax = 1 if layout_details.get("includeTax") in [True, 1, "1", "true", "True"] else 0
+                 
+                 person_pass = layout_details.get("personPass")
+                 if person_pass == "" or person_pass is None:
+                     person_pass = 0
+                 else:
+                     try:
+                         person_pass = int(person_pass)
+                     except ValueError:
+                         person_pass = 0
+
+                 if layout_exists:
+                     cursor.execute("""
+                        UPDATE event_layout
+                        SET floor_type=%s, day_based=%s, person_pass=%s, include_tax=%s
+                        WHERE event_id=%s
+                     """, (
+                         layout_details.get("floorType"),
+                         day_based,
+                         person_pass,
+                         include_tax,
+                         event_id
+                     ))
+                 else:
+                     cursor.execute("""
+                        INSERT INTO event_layout (event_id, floor_type, day_based, person_pass, include_tax)
+                        VALUES (%s, %s, %s, %s, %s)
+                     """, (
+                         event_id,
+                         layout_details.get("floorType"),
+                         day_based,
+                         person_pass,
+                         include_tax
+                     ))
+
                  cursor.execute("DELETE FROM stall_amenities WHERE event_id = %s", (event_id,))
                  cursor.execute("DELETE FROM event_stalls WHERE event_id = %s", (event_id,))
                  
@@ -2169,7 +3094,19 @@ def update_event(event_id):
                         INSERT INTO event_stalls 
                         (event_id, stall_name, stall_size, size_range, visibility, stall_type, price_inr, price_usd, prime_seat, prime_price_inr, prime_price_usd)
                         VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
-                     """, (event_id, stall.get('stallName'), stall.get('size'), stall.get('sizeRange'), stall.get('visibility'), stall.get('type'), stall.get('priceINR'), stall.get('priceUSD'), stall.get('primeSeat'), stall.get('primePriceINR'), stall.get('primePriceUSD')))
+                     """, (
+                         event_id, 
+                         stall.get('stallName'), 
+                         stall.get('size'), 
+                         stall.get('sizeRange'), 
+                         stall.get('visibility'), 
+                         stall.get('type'), 
+                         stall.get('priceINR'), 
+                         stall.get('priceUSD'), 
+                         1 if stall.get('primeSeat') in [True, 1, "1", "true", "True"] else 0, 
+                         stall.get('primePriceINR'), 
+                         stall.get('primePriceUSD')
+                     ))
 
                  for am in layout_details.get('amenities', []):
                      cursor.execute("INSERT INTO stall_amenities (event_id, stall_name, amenity, qty) VALUES (%s, %s, %s, %s)", (event_id, am.get('stallName'), am.get('amenity'), am.get('qty')))
@@ -2178,7 +3115,7 @@ def update_event(event_id):
              if terms_data:
                  cursor.execute("DELETE FROM event_terms WHERE event_id = %s", (event_id,))
                  for term in terms_data:
-                     cursor.execute("INSERT INTO event_terms (event_id, policy_group, policy_type, policy_name) VALUES (%s,%s,%s,%s)", (event_id, term.get('policyGroup'), term.get('policyType'), term.get('policyName')))
+                     cursor.execute("INSERT INTO event_terms (event_id, policy_group, policy_type, policy_name, is_default) VALUES (%s,%s,%s,%s,%s)", (event_id, term.get('policyGroup'), term.get('policyType'), term.get('policyName'), term.get('isDefault', False)))
 
              # 5. Update Vendors
              if vendors_data:
@@ -2193,11 +3130,70 @@ def update_event(event_id):
                  for g in vendors_data.get('guests', []):
                      cursor.execute("INSERT INTO event_guests (event_id, guest_name, designation, contact, image) VALUES (%s,%s,%s,%s,%s)", (event_id, g.get('name'), g.get('designation'), g.get('contact'), g.get('image')))
 
-             # 6. Handle Banner
+             # 6. Update Food & Vehicle Details
+             cursor.execute("DELETE FROM event_food_items WHERE event_id = %s", (event_id,))
+             for item in food_provision.get("items", []):
+                 cursor.execute("""
+                    INSERT INTO event_food_items (event_id, caterer_name, meal_type, food_type, price_inr, price_usd, menu_details)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                 """, (event_id, item.get("catererName"), item.get("mealType"), item.get("foodType"), item.get("priceINR") or 0, item.get("priceUSD") or 0, item.get("menuDetails")))
+             
+             cursor.execute("DELETE FROM event_vehicle_details WHERE event_id = %s", (event_id,))
+             for item in vehicle_provision.get("details", []):
+                 cursor.execute("""
+                    INSERT INTO event_vehicle_details (event_id, vehicle_type, price_inr, price_usd)
+                    VALUES (%s, %s, %s, %s)
+                 """, (event_id, item.get("vehicleType"), item.get("priceINR") or 0, item.get("priceUSD") or 0))
+
+             cursor.execute("DELETE FROM event_vehicle_addons WHERE event_id = %s", (event_id,))
+             for item in vehicle_provision.get("addons", []):
+                 cursor.execute("""
+                    INSERT INTO event_vehicle_addons (event_id, is_parent, addon_name, price)
+                    VALUES (%s, %s, %s, %s)
+                 """, (event_id, item.get("isParent", False), item.get("addOnName"), item.get("price") or 0))
+
+             # 7. Handle Banner
+             delete_banner = request.form.get("delete_banner") == "true"
              if 'banner' in request.files:
                  banner = request.files['banner']
-                 # Logic to save and update event_files...
-                 pass
+                 if banner:
+                     cursor.execute("DELETE FROM event_files WHERE event_id = %s AND file_type = 'banner'", (event_id,))
+                     folder, relative_cat, _ = get_file_folder(banner)
+                     filename = secure_filename(banner.filename)
+                     save_path = os.path.join(folder, filename)
+                     db_path = f"/uploads/{relative_cat}/{filename}"
+                     banner.save(save_path)
+                     cursor.execute("INSERT INTO event_files (event_id, file_name, file_path, file_type) VALUES (%s, %s, %s, %s)", (event_id, filename, db_path, "banner"))
+             elif delete_banner:
+                 cursor.execute("DELETE FROM event_files WHERE event_id = %s AND file_type = 'banner'", (event_id,))
+
+             # 8. Handle Documents (Identity Proofs)
+             existing_doc_ids_str = request.form.get("existing_doc_ids", "[]")
+             try:
+                 existing_doc_ids = json.loads(existing_doc_ids_str)
+             except Exception:
+                 existing_doc_ids = []
+
+             if existing_doc_ids:
+                 format_strings = ','.join(['%s'] * len(existing_doc_ids))
+                 query = f"DELETE FROM event_files WHERE event_id = %s AND file_type != 'banner' AND id NOT IN ({format_strings})"
+                 cursor.execute(query, [event_id] + existing_doc_ids)
+             else:
+                 cursor.execute("DELETE FROM event_files WHERE event_id = %s AND file_type != 'banner'", (event_id,))
+
+             doc_count = int(request.form.get("doc_count", 0))
+             for i in range(doc_count):
+                 file = request.files.get(f"docs_{i}")
+                 if file:
+                     folder, relative_cat, file_category = get_file_folder(file)
+                     filename = secure_filename(file.filename)
+                     save_path = os.path.join(folder, filename)
+                     db_path = f"/uploads/{relative_cat}/{filename}"
+                     file.save(save_path)
+                     cursor.execute("""
+                         INSERT INTO event_files (event_id, file_name, file_path, file_type, doc_type, doc_number)
+                         VALUES (%s, %s, %s, %s, %s, %s)
+                     """, (event_id, filename, db_path, file_category, request.form.get(f"doc_type_{i}"), request.form.get(f"doc_number_{i}")))
 
              conn.commit()
              return jsonify({"success": True, "message": "Event updated successfully"})
@@ -2399,7 +3395,7 @@ def get_profile(user_id):
         cursor = conn.cursor(dictionary=True)
 
         cursor.execute("""
-            SELECT id, name, email, mobile, address, country, state, city, profile_image
+            SELECT id, name, email, mobile, address, country, state, city, profile_image, organization_name
             FROM users
             WHERE id = %s
         """, (user_id,))
@@ -2460,7 +3456,8 @@ def update_profile():
                 country=%s,
                 state=%s,
                 city=%s,
-                profile_image=%s
+                profile_image=%s,
+                organization_name=%s
             WHERE id=%s
         """, (
             data.get("name"),
@@ -2470,6 +3467,7 @@ def update_profile():
             data.get("state"),
             data.get("city"),
             data.get("profile_image"),
+            data.get("organization_name"),
             user_id
         ))
 
@@ -2639,7 +3637,13 @@ def create_program():
         data = request.json
         print("Creating program:", data)
         conn = get_db_connection()
-        cursor = conn.cursor()
+        cursor = conn.cursor(dictionary=True)
+
+        # Generate unique Program Code
+        cursor.execute("SELECT MAX(id) as max_id FROM event_programs")
+        res = cursor.fetchone()
+        next_id = (res['max_id'] or 0) + 1
+        program_code = f"PRG-{str(next_id).zfill(3)}"
 
         query = """
             INSERT INTO event_programs (
@@ -2658,7 +3662,7 @@ def create_program():
         cursor.execute(query, (
             data.get("event_id"),
             data.get("name"),
-            data.get("code"),
+            program_code,
             data.get("category"),
             data.get("type"),
             start_date,
@@ -2673,7 +3677,7 @@ def create_program():
         ))
         
         conn.commit()
-        return jsonify({"message": "Program created successfully"}), 201
+        return jsonify({"message": "Program created successfully", "program_code": program_code}), 201
 
     except Exception as e:
         print("Program creation error:", str(e))
@@ -2681,11 +3685,14 @@ def create_program():
     finally:
         cursor.close()
         conn.close()
+
+
 @super_admin_bp.route('/api/program-events', methods=['GET'])
 def get_program_events():
     conn = None
     cursor = None
     try:
+        organizer_id = request.args.get("organizer_id")
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
         # Fetch events along with program counts by status
@@ -2694,6 +3701,8 @@ def get_program_events():
                 e.id, 
                 e.event_code, 
                 e.event_name,
+                e.start_date,
+                e.end_date,
                 COUNT(CASE WHEN p.status = 'Active' THEN 1 END) as approved,
                 COUNT(CASE WHEN p.status = 'Inactive' THEN 1 END) as rejected,
                 COUNT(CASE WHEN p.status = 'Inprocess' THEN 1 END) as inprocess,
@@ -2701,10 +3710,24 @@ def get_program_events():
             FROM event_details_table e
             LEFT JOIN event_programs p ON e.id = p.event_id
             WHERE e.status = 'APPROVED'
-            GROUP BY e.id
         """
-        cursor.execute(query)
+        
+        if organizer_id:
+            query += " AND e.user_id = %s "
+            query += " GROUP BY e.id ORDER BY e.id DESC"
+            cursor.execute(query, (organizer_id,))
+        else:
+            query += " GROUP BY e.id ORDER BY e.id DESC"
+            cursor.execute(query)
         data = cursor.fetchall()
+
+        # Format dates for JSON
+        for row in data:
+            if row.get("start_date"):
+                row["start_date"] = row["start_date"].strftime("%Y-%m-%d")
+            if row.get("end_date"):
+                row["end_date"] = row["end_date"].strftime("%Y-%m-%d")
+
         return jsonify(data)
     except Exception as e:
         return jsonify({"error": str(e)}), 500
@@ -2719,7 +3742,7 @@ def get_programs_by_event(event_id):
     try:
         conn = get_db_connection()
         cursor = conn.cursor(dictionary=True)
-        cursor.execute("SELECT * FROM event_programs WHERE event_id = %s", (event_id,))
+        cursor.execute("SELECT * FROM event_programs WHERE event_id = %s ORDER BY id DESC", (event_id,))
         data = cursor.fetchall()
         return jsonify(data)
     except Exception as e:
@@ -2898,3 +3921,283 @@ def delete_feedback(feedback_id):
     finally:
         cursor.close()
         db.close()
+@super_admin_bp.route("/api/policies/export/excel", methods=["GET"])
+def export_policies_excel():
+    try:
+        organizer_id = request.args.get('organizer_id')
+        print(f"INFO: [{datetime.now()}] Initiating Excel export for Policy Management. Organizer ID: {organizer_id}")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = "SELECT policy_code, policy_name, policy_type, policy_group, description, status FROM policies"
+        params = []
+        if organizer_id:
+            query += " WHERE organizer_id = %s"
+            params.append(organizer_id)
+        query += " ORDER BY id DESC"
+        
+        cursor.execute(query, params)
+        data = cursor.fetchall()
+        
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        df = pd.DataFrame(data)
+        df.columns = ["Policy Code", "Policy Name", "Policy Type", "Policy Group", "Description", "Status"]
+        
+        output = BytesIO()
+
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Policy_Report')
+            workbook = writer.book
+            worksheet = writer.sheets['Policy_Report']
+
+            # Header Styling
+            header_font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            header_fill = openpyxl.styles.PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+            
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = openpyxl.styles.Alignment(horizontal="center")
+
+            # Alternate Row Styling & Column Width
+            thin_border = openpyxl.styles.Side(border_style="thin", color="000000")
+            border = openpyxl.styles.Border(left=thin_border, right=thin_border, top=thin_border, bottom=thin_border)
+            
+            for row_idx, row in enumerate(worksheet.iter_rows(min_row=2, max_row=len(data)+1), start=2):
+                fill = openpyxl.styles.PatternFill(start_color="DCE6F1", end_color="DCE6F1", fill_type="solid") if row_idx % 2 == 0 else None
+                for cell in row:
+                    if fill: cell.fill = fill
+                    cell.border = border
+
+            # Auto-adjust columns width
+            for idx, col in enumerate(df.columns):
+                try:
+                    max_len = max(df[col].astype(str).map(len).max(), len(col)) + 4
+                    worksheet.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = min(max_len, 50)
+                except:
+                    worksheet.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = 20
+
+            worksheet.freeze_panes = 'A2'
+
+        output.seek(0)
+        filename = f"policy_list_{datetime.now().strftime('%Y_%m_%d')}.xlsx"
+        print(f"INFO: [{datetime.now()}] Excel export completed: {filename}")
+        
+        # ✅ Safest alternative: Return raw bytes with explicit headers
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return response
+
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] Excel export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
+@super_admin_bp.route("/api/policies/export/pdf", methods=["GET"])
+def export_policies_pdf():
+    try:
+        organizer_id = request.args.get('organizer_id')
+        print(f"INFO: [{datetime.now()}] Initiating PDF export for Policy Management. Organizer ID: {organizer_id}")
+        
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        
+        query = "SELECT policy_code, policy_name, policy_type, policy_group, status FROM policies"
+        params = []
+        if organizer_id:
+            query += " WHERE organizer_id = %s"
+            params.append(organizer_id)
+        query += " ORDER BY id DESC"
+        
+        cursor.execute(query, params)
+        data = cursor.fetchall()
+        
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        output = BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=landscape(letter), topMargin=30)
+        elements = []
+        
+        styles = getSampleStyleSheet()
+        
+        # Title Section
+        title_style = styles['Title']
+        title_style.fontSize = 20
+        title_style.textColor = colors.HexColor("#1e40af")
+        elements.append(Paragraph("Policy Management Report", title_style))
+        
+        date_style = styles['Normal']
+        date_style.alignment = 1
+        elements.append(Paragraph(f"Exported on: {datetime.now().strftime('%B %d, %Y | %H:%M:%S')}", date_style))
+        elements.append(Spacer(1, 24))
+
+        # Table Construction
+        table_data = [["Policy Code", "Policy Name", "Type", "Group", "Status"]]
+        
+        for row in data:
+            table_data.append([
+                row['policy_code'],
+                row['policy_name'],
+                row['policy_type'],
+                row['policy_group'],
+                row['status']
+            ])
+
+        # Table Formatting
+        column_widths = [100, 200, 100, 150, 80]
+        t = Table(table_data, colWidths=column_widths, repeatRows=1)
+        
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3b82f6")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ]))
+        
+        elements.append(t)
+        doc.build(elements)
+        
+        output.seek(0)
+        filename = f"policy_list_{datetime.now().strftime('%Y_%m_%d')}.pdf"
+        print(f"INFO: [{datetime.now()}] PDF export completed: {filename}")
+        
+        return send_file(output, as_attachment=True, download_name=filename, mimetype='application/pdf')
+
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] PDF export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
+@super_admin_bp.route("/api/venues/export/excel", methods=["GET"])
+def export_venues_excel():
+    try:
+        print(f"INFO: [{datetime.now()}] Initiating Excel export for Venues.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT venue_code, venue_name, address, status FROM venues ORDER BY id DESC")
+        data = cursor.fetchall()
+        
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+
+        df = pd.DataFrame(data)
+        df.columns = ["Venue Code", "Venue Name", "Address", "Status"]
+        
+        output = BytesIO()
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            df.to_excel(writer, index=False, sheet_name='Venue_Report')
+            
+            workbook = writer.book
+            worksheet = writer.sheets['Venue_Report']
+            header_font = openpyxl.styles.Font(bold=True, color="FFFFFF")
+            header_fill = openpyxl.styles.PatternFill(start_color="4F81BD", end_color="4F81BD", fill_type="solid")
+            for cell in worksheet[1]:
+                cell.font = header_font
+                cell.fill = header_fill
+                cell.alignment = openpyxl.styles.Alignment(horizontal="center")
+            
+            thin_border = openpyxl.styles.Side(border_style="thin", color="000000")
+            border = openpyxl.styles.Border(left=thin_border, right=thin_border, top=thin_border, bottom=thin_border)
+            
+            for row in worksheet.iter_rows(min_row=2, max_row=len(data)+1):
+                for cell in row:
+                    cell.border = border
+
+            for idx, col in enumerate(df.columns):
+                worksheet.column_dimensions[openpyxl.utils.get_column_letter(idx + 1)].width = 20
+
+        output.seek(0)
+        filename = f"venue_list_{datetime.now().strftime('%Y_%m_%d')}.xlsx"
+        
+        response = make_response(output.getvalue())
+        response.headers["Content-Disposition"] = f"attachment; filename={filename}"
+        response.headers["Content-Type"] = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+        return response
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] Excel export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
+
+@super_admin_bp.route("/api/venues/export/pdf", methods=["GET"])
+def export_venues_pdf():
+    try:
+        print(f"INFO: [{datetime.now()}] Initiating PDF export for Venues.")
+        conn = get_db_connection()
+        cursor = conn.cursor(dictionary=True)
+        cursor.execute("SELECT venue_code, venue_name, address, status FROM venues ORDER BY id DESC")
+        data = cursor.fetchall()
+
+        if not data:
+            return jsonify({"error": "No data available for export"}), 404
+        
+        output = BytesIO()
+        doc = SimpleDocTemplate(output, pagesize=landscape(letter), topMargin=30, bottomMargin=30)
+        elements = []
+        styles = getSampleStyleSheet()
+        
+        title_style = styles['Title']
+        title_style.fontSize = 20
+        title_style.textColor = colors.HexColor("#1e40af")
+        elements.append(Paragraph("Venue Management Report", title_style))
+        
+        date_style = styles['Normal']
+        date_style.alignment = 1
+        elements.append(Paragraph(f"Exported on: {datetime.now().strftime('%B %d, %Y | %H:%M:%S')}", date_style))
+        elements.append(Spacer(1, 24))
+
+        table_data = [["Venue Code", "Venue Name", "Address", "Status"]]
+        for row in data:
+            table_data.append([
+                row['venue_code'],
+                row['venue_name'],
+                row['address'],
+                row['status']
+            ])
+
+        column_widths = [100, 200, 250, 100]
+        t = Table(table_data, colWidths=column_widths, repeatRows=1)
+        t.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor("#3b82f6")),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.whitesmoke),
+            ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+            ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+            ('FONTNAME', (0, 0), (-1, 0), 'Helvetica-Bold'),
+            ('FONTSIZE', (0, 0), (-1, 0), 11),
+            ('BOTTOMPADDING', (0, 0), (-1, 0), 12),
+            ('TOPPADDING', (0, 0), (-1, 0), 12),
+            ('GRID', (0, 0), (-1, -1), 0.5, colors.grey),
+            ('ROWBACKGROUNDS', (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+            ('FONTSIZE', (0, 1), (-1, -1), 9),
+        ]))
+        elements.append(t)
+        doc.build(elements)
+        
+        output.seek(0)
+        filename = f"venue_list_{datetime.now().strftime('%Y_%m_%d')}.pdf"
+        print(f"INFO: [{datetime.now()}] PDF export completed: {filename}")
+        
+        return send_file(output, as_attachment=True, download_name=filename, mimetype='application/pdf')
+    except Exception as e:
+        print(f"ERROR: [{datetime.now()}] PDF export failed: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+    finally:
+        if 'cursor' in locals(): cursor.close()
+        if 'conn' in locals(): conn.close()
