@@ -133,6 +133,7 @@ const EventsPage = () => {
     setIsLoadingFullData(true);
     try {
       const fullData = await getEventFullDetails(event.id);
+      console.log("fullData Time", fullData);
       if (fullData) {
         setEditEvent(fullData);
         setShowCreate(true);
@@ -363,8 +364,8 @@ const EventsPage = () => {
                         setShowViewMenu(false);
                       }}
                       className={`cursor-pointer transition-all duration-300 p-1.5 rounded-xl ${openMenuId === e.id
-                          ? "bg-indigo-600 text-white shadow-md rotate-90"
-                          : "text-gray-400 hover:bg-indigo-50 hover:text-indigo-600"
+                        ? "bg-indigo-600 text-white shadow-md rotate-90"
+                        : "text-gray-400 hover:bg-indigo-50 hover:text-indigo-600"
                         }`}
                     />
                     {openMenuId === e.id && (
@@ -379,27 +380,32 @@ const EventsPage = () => {
                           <span className="font-medium">View Details</span>
                         </button>
 
-                        <button
-                          onClick={() => { handleEdit(e); setOpenMenuId(null); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-600 transition-all duration-200"
-                        >
-                          <div className="p-1.5 bg-amber-50 rounded-lg group-hover:bg-amber-100">
-                            <Pencil size={16} />
-                          </div>
-                          <span className="font-medium">Edit Event</span>
-                        </button>
+                        {e.status !== "APPROVED" && (
+                          <button
+                            onClick={() => { handleEdit(e); setOpenMenuId(null); }}
+                            className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-gray-700 hover:bg-amber-50 hover:text-amber-600 transition-all duration-200"
+                          >
+                            <div className="p-1.5 bg-amber-50 rounded-lg group-hover:bg-amber-100">
+                              <Pencil size={16} />
+                            </div>
+                            <span className="font-medium">Edit Event</span>
+                          </button>
+                        )}
 
-                        <div className="mx-2 my-1 border-t border-gray-50" />
-
-                        <button
-                          onClick={() => { handleDelete(e.id); setOpenMenuId(null); }}
-                          className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-all duration-200"
-                        >
-                          <div className="p-1.5 bg-red-50 rounded-lg group-hover:bg-red-100">
-                            <Trash2 size={16} />
-                          </div>
-                          <span className="font-medium">Delete Event</span>
-                        </button>
+                        {e.status !== "APPROVED" && (
+                          <>
+                            <div className="mx-2 my-1 border-t border-gray-50" />
+                            <button
+                              onClick={() => { handleDelete(e.id); setOpenMenuId(null); }}
+                              className="w-full flex items-center gap-3 px-4 py-2.5 text-sm text-red-600 hover:bg-red-50 transition-all duration-200"
+                            >
+                              <div className="p-1.5 bg-red-50 rounded-lg group-hover:bg-red-100">
+                                <Trash2 size={16} />
+                              </div>
+                              <span className="font-medium">Delete Event</span>
+                            </button>
+                          </>
+                        )}
                       </div>
                     )}
                   </div>
@@ -549,20 +555,24 @@ const EventsPage = () => {
                   >
                     <Eye size={20} />
                   </button>
-                  <button
-                    onClick={() => handleEdit(e)}
-                    className="p-2 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-100 transition"
-                    title="Edit"
-                  >
-                    <Pencil size={20} />
-                  </button>
-                  <button
-                    onClick={() => handleDelete(e.id)}
-                    className="p-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition"
-                    title="Delete"
-                  >
-                    <Trash2 size={20} />
-                  </button>
+                  {e.status !== "APPROVED" && (
+                    <button
+                      onClick={() => handleEdit(e)}
+                      className="p-2 bg-amber-50 text-amber-600 rounded-xl hover:bg-amber-100 transition"
+                      title="Edit"
+                    >
+                      <Pencil size={20} />
+                    </button>
+                  )}
+                  {e.status !== "APPROVED" && (
+                    <button
+                      onClick={() => handleDelete(e.id)}
+                      className="p-2 bg-rose-50 text-rose-600 rounded-xl hover:bg-rose-100 transition"
+                      title="Delete"
+                    >
+                      <Trash2 size={20} />
+                    </button>
+                  )}
                 </div>
               )}
             </div>
@@ -604,16 +614,15 @@ const EventsPage = () => {
               >
                 <ChevronLeft size={20} />
               </button>
-              
+
               {[...Array(totalPages)].map((_, i) => (
                 <button
                   key={i + 1}
                   onClick={() => handlePageChange(i + 1)}
-                  className={`w-10 h-10 rounded-xl font-bold transition-all shadow-sm ${
-                    currentPage === i + 1
+                  className={`w-10 h-10 rounded-xl font-bold transition-all shadow-sm ${currentPage === i + 1
                       ? "bg-indigo-600 text-white"
                       : "bg-white text-gray-600 border border-gray-200 hover:bg-indigo-50 hover:text-indigo-600"
-                  }`}
+                    }`}
                 >
                   {i + 1}
                 </button>
