@@ -48,11 +48,13 @@ const ViewEventDetails = ({ eventId, onClose }) => {
     }
   };
 
-  const { eventDetails, booking, layout, documents, terms, vendors, sponsors, guests } = data;
+  const { eventDetails, booking, layout, documents, terms, vendors, sponsors, guests, food_items, vehicle_details, vehicle_addons } = data;
 
   const tabs = [
     { id: 1, label: "Event Details" },
     { id: 2, label: "Booking" },
+    ...(eventDetails?.food === 1 || eventDetails?.food === true || eventDetails?.food === "true" ? [{ id: 7, label: "Food Provision" }] : []),
+    ...(eventDetails?.vehicle_pass === 1 || eventDetails?.vehicle_pass === true || eventDetails?.vehicle_pass === "true" ? [{ id: 8, label: "Vehicle Provision" }] : []),
     { id: 3, label: "Layout & Stall" },
     { id: 4, label: "Documents" },
     { id: 5, label: "Terms" },
@@ -191,8 +193,9 @@ const ViewEventDetails = ({ eventId, onClose }) => {
                     <div className="pt-2 border-t border-gray-50">
                        <p className="text-xs font-bold text-gray-500 mb-2">Mandatory documents</p>
                        <div className="flex gap-2 flex-wrap">
-                          {eventDetails?.aadhar === 'true' && <Badge color="indigo">Aadhar</Badge>}
-                          {eventDetails?.passport === 'true' && <Badge color="indigo">Passport</Badge>}
+                          {(eventDetails?.aadhar === 'true' || eventDetails?.aadhar === true || eventDetails?.aadhar === 1) && <Badge color="indigo">Aadhar</Badge>}
+                          {(eventDetails?.passport === 'true' || eventDetails?.passport === true || eventDetails?.passport === 1) && <Badge color="indigo">Passport</Badge>}
+                          {(eventDetails?.vehicle_number === 'true' || eventDetails?.vehicle_number === true || eventDetails?.vehicle_number === 1) && <Badge color="indigo">Vehicle Number</Badge>}
                        </div>
                     </div>
                   </div>
@@ -246,6 +249,88 @@ const ViewEventDetails = ({ eventId, onClose }) => {
                      )}
                   </div>
                </div>
+            </div>
+          )}
+
+          {/* TAB 7: Food Provision */}
+          {activeTab === 7 && (
+            <div className="space-y-6 max-w-4xl mx-auto">
+              <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                <div className="p-2 bg-orange-100 rounded-xl text-orange-600">
+                   <Users size={22} />
+                </div>
+                Food Provision Details
+              </h3>
+              
+              {(!food_items || food_items.length === 0) ? (
+                <p className="text-gray-500 italic py-8 text-center bg-gray-50 rounded-xl">No food details configured.</p>
+              ) : (
+                <div className="grid grid-cols-1 gap-6">
+                  {food_items.map((item, idx) => (
+                    <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                        <DetailItem label="Caterer Name" value={item.caterer_name} />
+                        <DetailItem label="Meal Type" value={item.meal_type} />
+                        <DetailItem label="Food Type" value={item.food_type} />
+                        <DetailItem label="Price (INR)" value={`₹${item.price_inr}`} />
+                        <DetailItem label="Price (USD)" value={`$${item.price_usd}`} />
+                        <div className="md:col-span-3">
+                          <DetailItem label="Menu Details" value={item.menu_details} />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* TAB 8: Vehicle Provision */}
+          {activeTab === 8 && (
+            <div className="space-y-8 max-w-4xl mx-auto">
+              <div>
+                 <h3 className="text-xl font-bold text-gray-800 flex items-center gap-2 mb-6">
+                   <div className="p-2 bg-blue-100 rounded-xl text-blue-600">
+                       <MapPin size={22} />
+                   </div>
+                   Vehicle Pass Details
+                 </h3>
+                 
+                 {(!vehicle_details || vehicle_details.length === 0) ? (
+                   <p className="text-gray-500 italic py-8 text-center bg-gray-50 rounded-xl">No vehicle details configured.</p>
+                 ) : (
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
+                     {vehicle_details.map((item, idx) => (
+                       <div key={idx} className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                          <DetailItem label="Vehicle Type" value={item.vehicle_type} />
+                          <div className="flex gap-6 mt-3">
+                             <DetailItem label="Price (INR)" value={`₹${item.price_inr}`} />
+                             <DetailItem label="Price (USD)" value={`$${item.price_usd}`} />
+                          </div>
+                       </div>
+                     ))}
+                   </div>
+                 )}
+              </div>
+
+              <div>
+                 <h3 className="text-lg font-bold text-gray-800 mb-6">Vehicle Add-ons</h3>
+                 {(!vehicle_addons || vehicle_addons.length === 0) ? (
+                   <p className="text-gray-500 italic py-6 text-center bg-gray-50 rounded-xl">No add-ons configured.</p>
+                 ) : (
+                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                     {vehicle_addons.map((addon, idx) => (
+                       <div key={idx} className="bg-white p-5 rounded-xl border border-gray-100 flex justify-between items-center">
+                         <div>
+                           <p className="text-sm font-bold text-gray-800">{addon.addon_name}</p>
+                           {addon.is_parent === 1 && <span className="text-[10px] bg-blue-100 text-blue-700 px-2 py-0.5 rounded-full font-bold">Parent</span>}
+                         </div>
+                         <p className="font-bold text-indigo-600">₹{addon.price}</p>
+                       </div>
+                     ))}
+                   </div>
+                 )}
+              </div>
             </div>
           )}
 
@@ -410,6 +495,13 @@ const ViewEventDetails = ({ eventId, onClose }) => {
                        <div key={idx} className="flex flex-col  p-5 bg-gray-50 rounded-xl border border-gray-100">
                          <span className="text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">{term.policy_group} &gt; {term.policy_type}</span>
                          <span className="text-gray-900 font-semibold">{term.policy_name}</span>
+                         {term.is_default ? (
+                           <div className="absolute top-2 right-2">
+                             <span className="px-2 py-0.5 bg-emerald-100 text-emerald-700 rounded-md text-[10px] font-bold uppercase">
+                               Default
+                             </span>
+                           </div>
+                         ) : null}
                        </div>
                      ))}
                    </div>
